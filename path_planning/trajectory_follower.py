@@ -72,6 +72,8 @@ class PurePursuit(Node):
         self.speed = self.VELOCITY
         # self.lookahead = self.LOOKAHEAD
         self.path = None
+        self.line_pub = self.create_publisher(Marker, '/drive_line', 10)
+
 
     def pose_callback(self, odometry_msg):
         """
@@ -103,6 +105,9 @@ class PurePursuit(Node):
 
         self.initialized_traj = True
 
+        x, y = zip(*self.trajectory.points)
+        VisualizationTools.plot_line(list(x), list(y), self.line_pub, color=(0.0, 1.0, 0.0))
+
         # added:  discretizing the path
         new_path = [self.trajectory.points[0]] # initialize with the first point
         new_distances = [0]
@@ -129,7 +134,7 @@ class PurePursuit(Node):
         # set the x and y points for the end point (in the map frame)
         self.end_x, self.end_y = new_path[-1]
 
-        # # visualize the path
+        # visualize the path
         # x, y = zip(*new_path)
         # VisualizationTools.plot_line(list(x), list(y), self.line_pub)
 
@@ -312,7 +317,7 @@ class PurePursuit(Node):
 class VisualizationTools:
 
     @staticmethod
-    def plot_line(x, y, publisher, color=(1.0, 0.0, 0.0), frame="/base_link"):
+    def plot_line(x, y, publisher, color=(1.0, 0.0, 0.0), frame="/map"):
         """
         Publishes the points (x, y) to publisher
         so they can be visualized in rviz as
@@ -328,7 +333,7 @@ class VisualizationTools:
         """
         # Construct a line
         line_strip = Marker()
-        line_strip.type = Marker.LINE_STRIP
+        line_strip.type = Marker.POINTS  # LINE_STRIP for with lines
         line_strip.header.frame_id = frame
 
         # Set the size and color
