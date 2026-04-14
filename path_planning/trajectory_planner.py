@@ -9,6 +9,7 @@ import pickle
 import networkx as nx
 from path_planning.offline_prm import PRM
 from scipy.spatial.transform import Rotation as R
+from rclpy.qos import QoSProfile, DurabilityPolicy
 
 class PathPlan(Node):
 
@@ -17,12 +18,14 @@ class PathPlan(Node):
         self.declare_parameter('odom_topic', "/odom")
         self.declare_parameter('map_topic', "/map")
         self.declare_parameter('rover_radius', 0.20)
-        self.declare_parameter('offline', True)
+        self.declare_parameter('offline', False)
+        self.declare_parameter('num_nodes', 250)
 
         self.rover_radius = self.get_parameter('rover_radius').value
         self.odom_topic = self.get_parameter('odom_topic').get_parameter_value().string_value
         self.map_topic = self.get_parameter('map_topic').get_parameter_value().string_value
         self.offline = self.get_parameter('offline').value
+        self.num_nodes = self.get_parameter('num_nodes').value
 
         self.start_point = None
         self.end_point = None
@@ -31,10 +34,19 @@ class PathPlan(Node):
         self.PRM_map = nx.Graph()
         self.tree = None
 
+        with open("roadmap_KDtree_big.pkl", 'rb') as f:
+            self.tree = pickle.load(f)
+
+        with open("roadmap_big.pkl", 'rb') as f:
+            self.PRM_map = pickle.load(f)
+
         self.map_sub = self.create_subscription(OccupancyGrid, self.map_topic, self.map_cb, 1)
         self.goal_sub = self.create_subscription(PoseStamped, "/goal_pose", self.goal_cb, 10)
         self.pose_sub = self.create_subscription(Odometry, self.odom_topic, self.pose_cb, 10)
-        self.traj_pub = self.create_publisher(PoseArray, "/trajectory/current", 10)
+        # self.traj_pub = self.create_publisher(PoseArray, "/trajectory/current", 10)
+
+        latch_qos = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
+        self.traj_pub = self.create_publisher(PoseArray, "/trajectory/current", latch_qos)
 
         self.trajectory = LineTrajectory(node=self, viz_namespace="/planned_trajectory")
 
@@ -50,28 +62,33 @@ class PathPlan(Node):
         Returns:
             None
         """
+        self.resolution = msg.info.resolution
+        self.origin_x = msg.info.origin.position.x
+        self.origin_y = msg.info.origin.position.y
+
+        quat = [msg.info.origin.orientation.x, msg.info.origin.orientation.y,
+                msg.info.origin.orientation.z, msg.info.origin.orientation.w]
+        self.map_yaw = R.from_quat(quat).as_euler('xyz')[2]
+        pixel_radius = int(self.rover_radius / self.resolution)
+
+        map_data = np.array(msg.data, np.double)
+        binary_map = (map_data == 0).astype(np.uint8)
+
+        dist_map = cv2.distanceTransform(binary_map, cv2.DIST_L2, 5)
+        safe_map = (dist_map > pixel_radius).astype(np.int8)
+
+        height, width = msg.info.height, msg.info.width
+        self.occupancy_map = safe_map.reshape((height, width))
+
         if self.offline:
-            self.resolution = msg.info.resolution
-            self.origin_x = msg.info.origin.position.x
-            self.origin_y = msg.info.origin.position.y
-
-            quat = [msg.info.origin.orientation.x, msg.info.origin.orientation.y,
-                    msg.info.origin.orientation.z, msg.info.origin.orientation.w]
-            self.map_yaw = R.from_quat(quat).as_euler('xyz')[2]
-            pixel_radius = int(self.rover_radius / self.resolution)
-
-            map_data = np.array(msg.data, np.double)
-            binary_map = (map_data == 0).astype(np.uint8)
-
-            dist_map = cv2.distanceTransform(binary_map, cv2.DIST_L2, 5)
-            safe_map = (dist_map > pixel_radius).astype(np.int8)
-
-            height, width = msg.info.height, msg.info.width
-            self.occupancy_map = safe_map.reshape((height, width))
-
             self.get_logger().info("Map received. Generating PRM...")
-
-            prm_generator = PRM(self.occupancy_map, msg)
+            self.get_logger().info(f"{self.resolution}")
+            self.get_logger().info(f"{height}")
+            self.get_logger().info(f"{width}")
+            self.get_logger().info(f"{self.origin_x}")
+            self.get_logger().info(f"""{msg.info.origin.orientation.x, msg.info.origin.orientation.y,
+                    msg.info.origin.orientation.z, msg.info.origin.orientation.w}""")
+            prm_generator = PRM(self.occupancy_map, msg, self.num_nodes)
             self.PRM_map = prm_generator.roadmap
             self.tree = prm_generator.tree
             self.get_logger().info("PRM ready for planning.")
@@ -104,6 +121,16 @@ class PathPlan(Node):
                     if clear:
                         self.PRM_map.add_edge(node_id, n_id, weight=dist)
         return node_id
+
+    def euclidean(self,u, v):
+        pu = self.PRM_map.nodes[u]['pos']
+        pv = self.PRM_map.nodes[v]['pos']
+        return ((pu[0] - pv[0])**2 + (pu[1] - pv[1])**2)**0.5
+
+    def manhattan(self,u, v):
+        pu = self.PRM_map.nodes[u]['pos']
+        pv = self.PRM_map.nodes[v]['pos']
+        return abs(pu[0] - pv[0]) + abs(pu[1] - pv[1])
 
     def is_line_clear(self, p1, p2):
         """
@@ -155,6 +182,7 @@ class PathPlan(Node):
         self.link_node_to_graph(end_point, "end")
 
         try:
+            self.get_logger().info("dijkstra's")
             node_path = nx.astar_path(self.PRM_map, "start", "end", weight='weight')
             points = [self.PRM_map.nodes[n_id]['pos'] for n_id in node_path]
 
