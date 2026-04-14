@@ -9,7 +9,7 @@ import pickle
 import networkx as nx
 from path_planning.offline_prm import PRM
 from scipy.spatial.transform import Rotation as R
-from rclpy.qos import QoSProfile, DurabilityPolicy
+# from rclpy.qos import QoSProfile, DurabilityPolicy
 
 class PathPlan(Node):
 
@@ -34,19 +34,20 @@ class PathPlan(Node):
         self.PRM_map = nx.Graph()
         self.tree = None
 
-        with open("roadmap_KDtree_big.pkl", 'rb') as f:
+        with open("roadmap_KDtree.pkl", 'rb') as f:
             self.tree = pickle.load(f)
 
-        with open("roadmap_big.pkl", 'rb') as f:
+        with open("roadmap.pkl", 'rb') as f:
             self.PRM_map = pickle.load(f)
 
         self.map_sub = self.create_subscription(OccupancyGrid, self.map_topic, self.map_cb, 1)
         self.goal_sub = self.create_subscription(PoseStamped, "/goal_pose", self.goal_cb, 10)
         self.pose_sub = self.create_subscription(Odometry, self.odom_topic, self.pose_cb, 10)
-        # self.traj_pub = self.create_publisher(PoseArray, "/trajectory/current", 10)
+        self.traj_pub = self.create_publisher(PoseArray, "/trajectory/current", 10)
 
-        latch_qos = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
-        self.traj_pub = self.create_publisher(PoseArray, "/trajectory/current", latch_qos)
+        # use this publisher for when visualizing several planners in one go
+        # latch_qos = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
+        # self.traj_pub = self.create_publisher(PoseArray, "/trajectory/current", latch_qos)
 
         self.trajectory = LineTrajectory(node=self, viz_namespace="/planned_trajectory")
 
