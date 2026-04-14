@@ -111,7 +111,7 @@ class PurePursuit(Node):
             p1, p2 = self.trajectory.points[i-1], self.trajectory.points[i]
             segment_length = cummulative_segment_length_to_p2 - self.trajectory.distances[i-1]
             if segment_length > self.DISCRETIZATION_LENGTH:
-                extra_points = segment_length // self.DISCRETIZATION_LENGTH - 1 # one point less than the number of segments
+                extra_points = int (segment_length // self.DISCRETIZATION_LENGTH) - 1 # one point less than the number of segments
                 new_x_pts = np.linspace(p1[0], p2[0], 2 + extra_points)
                 new_y_pts = np.linspace(p1[1], p2[1], 2 + extra_points)
                 new_segment_distance = segment_length / (extra_points + 1) # divide segment lengthh by the new number of segments i need
@@ -127,12 +127,11 @@ class PurePursuit(Node):
 
 
         # set the x and y points for the end point (in the map frame)
-        self.end_x = new_path[-1]
-        self.end_y = new_path[-1]
+        self.end_x, self.end_y = new_path[-1]
 
-        # visualize the path
-        x, y = zip(*path)
-        VisualizationTools.plot_line(list(x), list(y), self.line_pub)
+        # # visualize the path
+        # x, y = zip(*new_path)
+        # VisualizationTools.plot_line(list(x), list(y), self.line_pub)
 
         self.get_logger().info(f'\n***New Path Recieved: {len(new_path)} points ***')
 
@@ -178,7 +177,7 @@ class PurePursuit(Node):
 
         # publish the drive command instead of saving it
         # self.drive_cmd = drive_cmd
-        self.get_logger().info(f'Drive command sent: {drive_cmd.drive.velocity}')
+        self.get_logger().info(f'Drive command sent: {drive_cmd.drive.speed}')
         self.drive_pub.publish(drive_cmd)
 
     def get_lookahead_point(self, path):
@@ -249,7 +248,8 @@ class PurePursuit(Node):
 
         # calculate with the pure pursuit
         robot_pos = np.array([self.x, self.y])
-        goal_vector = target_point - robot_pos
+        # goal_vector = target_point - robot_pos
+        goal_vector = self.world_to_vehicle(target_point)
         new_steering_angle = self.compute_feedback_angle(goal_vector)
 
         # If the turn we have to make is too tight or the cone is cut off, or the cone is just plainly too close, reverse first
@@ -296,6 +296,18 @@ class PurePursuit(Node):
         else:
             return 0.5
 
+    def world_to_vehicle(self, point):
+        dx = point[0] - self.x
+        dy = point[1] - self.y
+
+        cos_theta = np.cos(self.theta)
+        sin_theta = np.sin(self.theta)
+
+        x_car =  cos_theta * dx + sin_theta * dy
+        y_car = -sin_theta * dx + cos_theta * dy
+
+        return np.array([x_car, y_car])
+
 
 class VisualizationTools:
 
@@ -336,6 +348,8 @@ class VisualizationTools:
 
         # Publish the line
         publisher.publish(line_strip)
+
+
 
 def main(args=None):
     rclpy.init(args=args)
