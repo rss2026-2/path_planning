@@ -13,8 +13,12 @@ import numpy as np
 import math
 import heapq
 from scipy.spatial.transform import Rotation as R
-from scipy.ndimage import distance_transform_edt
 import cv2
+
+import time
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 
 class PathPlan(Node):
     """ Listens for goal pose published by RViz and uses it to plan a path from
@@ -64,11 +68,20 @@ class PathPlan(Node):
         self.trajectory = LineTrajectory(node=self, viz_namespace="/planned_trajectory")
         self.map = None
         self.pose = None
-        self.car_dims = { # inches to meters
-            "length" : 22 * 0.0254,
-            "width" : 12 * 0.0254
-        }
-        self.simulation = True
+        
+        #reset trials
+        self.trials = []
+        fig, ax = plt.subplots()
+        colors = plt.cm.tab20(np.linspace(0, 1, len(self.trials)))
+        for i,trial in enumerate(self.trials):
+            ax.plot(trial["x"], trial["y"], marker = "o", color = colors[i], label = trial["label"])
+
+        ax.set_xlabel("Step Size (Cells)")
+        ax.set_ylabel("Time (ms)")
+        ax.legend(title = "Approx Distance To Goal (Cells)")
+        ax.set_title("Relationship between Step Size and Distance from Goal")
+        fig.savefig("src/path_planning/path_planning/generated_figs/step_size_trial.png", bbox_inches="tight")
+        plt.close(fig)
 
         self.get_logger().info("Awaiting Map")
 
@@ -101,13 +114,8 @@ class PathPlan(Node):
         transform_inverse[:3, 3] = -map_transform[:3,:3].T @ map_transform[:3, 3]
 
         occupancy_grid = np.array(map_msg.data).reshape(map_msg.info.height, map_msg.info.width)
+        
         safety_cell_radius = 5
-
-        if not self.simulation:
-            length, width = self.car_dims["length"], self.car_dims["width"]
-            safety_radius = np.sqrt(((length)/2)**2 + ((width)/2)**2)
-            safety_cell_radius = safety_radius / map_msg.info.resolution
-
         self.map_occupancy_expansion(occupancy_grid, safety_cell_radius)
 
         self.map = {
@@ -156,35 +164,79 @@ class PathPlan(Node):
             return
 
         goal_pose = goal_msg.pose
-        self.plan_path(
-            start_point = (
-                self.pose["position"][0],
-                self.pose["position"][1]
-            ),
-            end_point = (
-                goal_pose.position.x,    
-                goal_pose.position.y,    
-            ),
-        )
+        start_point = (self.pose["position"][0], self.pose["position"][1])
+        end_point = (goal_pose.position.x, goal_pose.position.y)
 
-        self.get_logger().info("Path Generated!")
-        self.trajectory.publish_viz()
+        # self.plan_path(
+        #     start_point = start_point,
+        #     end_point = end_point
+        # )
+
+        # self.get_logger().info("Path Generated!")
+        # self.trajectory.publish_viz()
+
+        self.step_size_trial(start_point, end_point)
+        pass
+
+    def step_size_trial(self, start_point, end_point):
+        new_trial = {
+            "label": int(math.dist(start_point, end_point) / self.map["res"]),
+            "x" : np.arange(10,21,2),
+            "y1": [],
+            "y2": []
+        }
+
+
+        for step_size in new_trial["x"]:
+            start_time = time.perf_counter_ns()
+            self.plan_path(start_point = start_point, end_point = end_point, max_step_size = step_size, visualize = True)
+            time_elapsed = int((time.perf_counter_ns() - start_time) / 1e6)
+            new_trial["y1"].append(time_elapsed)
+            new_trial["y2"].append(self.trajectory.distance_to_end(0))
+
+            self.trajectory.publish_viz()
+            time.sleep(2)
+        
+        self.trials.append(new_trial)
+
+        fig, axs = plt.subplots(1,2, layout='constrained', )
+        colors = plt.cm.tab20(np.linspace(0, 1, len(self.trials)))
+
+        
+        for i,trial in enumerate(self.trials):
+            axs[0].plot(trial["x"], trial["y1"], marker = "o", color = colors[i], label = trial["label"])
+            axs[1].plot(trial["x"], trial["y2"], marker = "o", color = colors[i], label = trial["label"])
+
+        axs[0].set_xticks(new_trial["x"])
+        axs[0].set_xlabel("Step Size (Cells)")
+        axs[0].set_ylabel("Time (ms)")
+        axs[0].set_title("Planning Time vs Step Size")
+
+        axs[1].set_xticks(new_trial["x"])
+        axs[1].set_xlabel("Step Size (Cells)")
+        axs[1].set_ylabel("Distance (meters)")
+        axs[1].set_title("Path Distance vs Step Size")
+
+        fig.legend(*axs[0].get_legend_handles_labels(),title = "Approx Distance To Goal (Cells)", loc='upper left', bbox_to_anchor=(1.05, 0.9))
+        fig.savefig("src/path_planning/path_planning/generated_figs/step_size_trial.png", bbox_inches="tight")
+        plt.close(fig)
+
         pass
 
 
-    def plan_path(self, start_point, end_point):
+    def plan_path(self, start_point, end_point, max_step_size = 5, visualize = False):
         cells = self.real_to_grid_frame(np.array([start_point, end_point]))
    
         start_cell, end_cell = tuple(cells[0]), tuple(cells[1])
         
-        grid_path = self.occupancy_priority_q(start_cell, end_cell, max_step_size = 5, visualize = True)
+        grid_path = self.occupancy_priority_q(start_cell, end_cell, max_step_size, visualize)
         grid_shortened_path = self.shorten_cell_path(grid_path)
         real_path = self.grid_to_real_frame(grid_shortened_path)
 
         self.trajectory.clear()
         self.trajectory.addPoints(real_path)
     
-    def occupancy_priority_q(self, start_cell, end_cell, max_step_size = 1, visualize = False):
+    def occupancy_priority_q(self, start_cell, end_cell, max_step_size, visualize):
         
         queue = [] # le heap
         seen = set()
@@ -296,8 +348,6 @@ class PathPlan(Node):
         
         new_cell_path.append(cell_path[-1])
         return new_cell_path
-
-
 
     def grid_to_real_frame(self, cells):
         cells = np.array([[cx * self.map["res"], cy * self.map["res"],0,1] for cx, cy in cells])
