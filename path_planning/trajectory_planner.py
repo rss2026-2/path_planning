@@ -1,5 +1,5 @@
 import rclpy
-from geometry_msgs.msg import PoseArray, PoseStamped
+from geometry_msgs.msg import PoseArray, PoseStamped, PoseWithCovarianceStamped
 from nav_msgs.msg import OccupancyGrid, Odometry
 from path_planning.utils import LineTrajectory
 from rclpy.node import Node
@@ -15,7 +15,7 @@ class PathPlan(Node):
 
     def __init__(self):
         super().__init__("trajectory_planner")
-        self.declare_parameter('odom_topic', "/odom")
+        self.declare_parameter('odom_topic', "/initialpose")
         self.declare_parameter('map_topic', "/map")
         self.declare_parameter('rover_radius', 0.20)
         self.declare_parameter('offline', False)
@@ -34,15 +34,15 @@ class PathPlan(Node):
         self.PRM_map = nx.Graph()
         self.tree = None
 
-        with open("roadmap_KDtree.pkl", 'rb') as f:
+        with open("/root/racecar_ws/path_planning_prm/roadmap_KDtree.pkl", 'rb') as f:
             self.tree = pickle.load(f)
 
-        with open("roadmap.pkl", 'rb') as f:
+        with open("/root/racecar_ws/path_planning_prm/roadmap.pkl", 'rb') as f:
             self.PRM_map = pickle.load(f)
 
         self.map_sub = self.create_subscription(OccupancyGrid, self.map_topic, self.map_cb, 1)
         self.goal_sub = self.create_subscription(PoseStamped, "/goal_pose", self.goal_cb, 10)
-        self.pose_sub = self.create_subscription(Odometry, self.odom_topic, self.pose_cb, 10)
+        self.pose_sub = self.create_subscription(PoseWithCovarianceStamped, self.odom_topic, self.pose_cb, 10)
         self.traj_pub = self.create_publisher(PoseArray, "/trajectory/current", 10)
 
         # use this publisher for when visualizing several planners in one go
@@ -213,6 +213,7 @@ class PathPlan(Node):
             None
         """
         self.start_point = (msg.pose.pose.position.x, msg.pose.pose.position.y)
+        self.get_logger().info(f"start point set: {self.start_point}")
 
     def goal_cb(self, msg):
         """
@@ -228,6 +229,7 @@ class PathPlan(Node):
             return
 
         self.end_point = (msg.pose.position.x, msg.pose.position.y)
+        self.get_logger().info(f"goal pose set: {self.end_point}")
         self.plan_path(self.start_point, self.end_point)
 
 def main(args=None):

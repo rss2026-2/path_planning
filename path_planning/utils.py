@@ -68,7 +68,7 @@ class LineTrajectory:
             return (1.0 - t) * self.distances[i] + t * self.distances[i + 1]
 
     def addPoint(self, point: Tuple[float, float]) -> None:
-        self.node.get_logger().info("adding point to trajectory:", point)
+        self.node.get_logger().info(f"adding point to trajectory:, {point}")
         self.points.append(point)
         self.update_distances()
         self.mark_dirty()
@@ -82,7 +82,7 @@ class LineTrajectory:
         return len(self.points) == 0
 
     def save(self, path):
-        self.node.get_logger().info("Saving trajectory to:", path)
+        self.node.get_logger().info(f"Saving trajectory to:, {path}")
         data = {}
         data["points"] = []
         for p in self.points:
@@ -97,7 +97,7 @@ class LineTrajectory:
         return not self.has_acceleration
 
     def load(self, path):
-        self.node.get_logger().info("Loading trajectory:", path)
+        self.node.get_logger().info("Loading trajectory")
 
         # resolve all env variables in path
         path = os.path.expandvars(path)
@@ -107,7 +107,7 @@ class LineTrajectory:
             for p in json_data["points"]:
                 self.points.append((p["x"], p["y"]))
         self.update_distances()
-        self.node.get_logger().info("Loaded:", len(self.points), "points")
+        self.node.get_logger().info(f"Loaded:, {len(self.points)}, points")
         self.mark_dirty()
 
     # build a trajectory class instance from a trajectory message
@@ -116,7 +116,7 @@ class LineTrajectory:
             self.points.append((p.position.x, p.position.y))
         self.update_distances()
         self.mark_dirty()
-        self.node.get_logger().info("Loaded new trajectory with:", len(self.points), "points")
+        self.node.get_logger().info(f"Loaded new trajectory with: {len(self.points)} points")
 
     def toPoseArray(self):
         traj = PoseArray()
@@ -132,7 +132,8 @@ class LineTrajectory:
     def publish_start_point(self, duration=0.0, scale=0.1):
         should_publish = len(self.points) > 0
         self.node.get_logger().info("Before Publishing start point")
-        if self.visualize and self.start_pub.get_subscription_count() > 0:
+        # if self.visualize and self.start_pub.get_subscription_count() > 0:
+        if self.visualize:
             self.node.get_logger().info("Publishing start point")
             marker = Marker()
             marker.header = self.make_header("/map")
@@ -164,7 +165,8 @@ class LineTrajectory:
     def publish_end_point(self, duration=0.0):
         should_publish = len(self.points) > 1
         self.node.get_logger().info("Before publishing end point")
-        if self.visualize and self.end_pub.get_subscription_count() > 0:
+        # if self.visualize and self.end_pub.get_subscription_count() > 0:
+        if self.visualize:
             self.node.get_logger().info("Publishing end point")
             marker = Marker()
             marker.header = self.make_header("/map")
@@ -196,7 +198,8 @@ class LineTrajectory:
     def publish_trajectory(self, duration=0.0):
         should_publish = len(self.points) > 1
         self.node.get_logger().info("Before publishing trajectory")
-        if self.visualize and self.traj_pub.get_subscription_count() > 0:
+        # if self.visualize and self.traj_pub.get_subscription_count() > 0:
+        if self.visualize:
             self.node.get_logger().info("Publishing trajectory")
             marker = Marker()
             marker.header = self.make_header("/map")

@@ -27,7 +27,7 @@ class PurePursuit(Node):
         self.drive_topic = self.get_parameter('drive_topic').get_parameter_value().string_value
 
         # self.lookahead = 0.8  # FILL IN # this was our default before
-        self.speed = 2.0  # FILL IN # we want to test with different speeds
+        self.speed = 1.0  # FILL IN # we want to test with different speeds
         self.wheelbase_length = 0.325 # FILL IN # Need to check this number
 
         self.initialized_traj = False
@@ -56,10 +56,10 @@ class PurePursuit(Node):
         # added in the last pure pursuit
         # self.declare_parameter("car_length", 0.325) # replaced with self.wheelbase_length
         self.declare_parameter("max_steering_angle", 0.34)
-        self.declare_parameter("velocity", 1.0)
+        self.declare_parameter("velocity", 0.5)
         self.declare_parameter("lookahead", 0.8)
         self.declare_parameter("error_epsilon", 1.0)
-        self.declare_parameter("discretization_length", 1.0)
+        self.declare_parameter("discretization_length", 0.2)
         # self.CAR_LENGTH = self.get_parameter('car_length').get_parameter_value().double_value # replaced with self.wheelbase_length
         self.MAX_STEERING_ANGLE = self.get_parameter('max_steering_angle').get_parameter_value().double_value
         # self.VELOCITY = self.get_parameter('velocity').get_parameter_value().double_value # replaced with self.speed
@@ -71,10 +71,12 @@ class PurePursuit(Node):
 
         # this could mess things up:
         # self.speed = self.VELOCITY
-        self.LOOKAHEAD = 0.6 + 0.2 * self.speed
+        self.LOOKAHEAD = 0.8 + 0.2 * self.speed
         self.path = None
         self.line_pub = self.create_publisher(Marker, '/drive_line', 10)
         self.target_pub = self.create_publisher(Marker, '/target_point', 10)
+
+        self.lookahead_pub = self.create_publisher(Marker, '/lookahead_line', 10)
 
 
     def pose_callback(self, odometry_msg):
@@ -90,7 +92,7 @@ class PurePursuit(Node):
         quat = [orientation.x, orientation.y, orientation.z, orientation.w]
         r = R.from_quat(quat)
         self.theta = r.as_euler('zxy', degrees=False)[0]
-        self.get_logger().info(f'New Pose: {self.x}, {self.y}')
+        # self.get_logger().info(f'New Pose: {self.x}, {self.y}')
 
     def trajectory_callback(self, msg):
         """
@@ -99,7 +101,7 @@ class PurePursuit(Node):
         Generates a set of points discretizing the path (represented by key points) into points
         that can be followed using our implementation of pure pursuit.
         """
-        self.get_logger().info(f"Receiving new trajectory {len(msg.poses)} points")
+        # self.get_logger().info(f"Receiving new trajectory {len(msg.poses)} points")
 
         self.trajectory.clear()
         self.trajectory.fromPoseArray(msg)
@@ -107,29 +109,29 @@ class PurePursuit(Node):
 
         self.initialized_traj = True
 
-        # x, y = zip(*self.trajectory.points)
-        # VisualizationTools.plot_line(list(x), list(y), self.line_pub, color=(0.0, 1.0, 0.0))
+        x, y = zip(*self.trajectory.points)
+        VisualizationTools.plot_line(list(x), list(y), self.line_pub, color=(0.0, 1.0, 0.0))
 
         # added:  discretizing the path
-        # new_path = [self.trajectory.points[0]] # initialize with the first point
-        # new_distances = [0]
-        # for i in range(1, len(self.trajectory.distances)):
-        #     cummulative_segment_length_to_p2 = self.trajectory.distances[i]
-        #     p1, p2 = self.trajectory.points[i-1], self.trajectory.points[i]
-        #     segment_length = cummulative_segment_length_to_p2 - self.trajectory.distances[i-1]
-        #     if segment_length > self.DISCRETIZATION_LENGTH:
-        #         extra_points = int (segment_length // self.DISCRETIZATION_LENGTH) - 1 # one point less than the number of segments
-        #         new_x_pts = np.linspace(p1[0], p2[0], 2 + extra_points)
-        #         new_y_pts = np.linspace(p1[1], p2[1], 2 + extra_points)
-        #         new_segment_distance = segment_length / (extra_points + 1) # divide segment lengthh by the new number of segments i need
-        #         next_distance = new_segment_distance + self.trajectory.distances[i-1] # starting from the last point
-        #         for x_new, y_new in zip(new_x_pts[1:-1], new_y_pts[1:-1]): # skips p1 and p2
-        #             new_path.append((x_new, y_new))
-        #             new_distances.append(next_distance)
-        #             next_distance += new_segment_distance
-        #     new_path.append(p2)
-        #     new_distances.append(cummulative_segment_length_to_p2)
-        new_path = self.trajectory.points
+        new_path = [self.trajectory.points[0]] # initialize with the first point
+        new_distances = [0]
+        for i in range(1, len(self.trajectory.distances)):
+            cummulative_segment_length_to_p2 = self.trajectory.distances[i]
+            p1, p2 = self.trajectory.points[i-1], self.trajectory.points[i]
+            segment_length = cummulative_segment_length_to_p2 - self.trajectory.distances[i-1]
+            if segment_length > self.DISCRETIZATION_LENGTH:
+                extra_points = int (segment_length // self.DISCRETIZATION_LENGTH) - 1 # one point less than the number of segments
+                new_x_pts = np.linspace(p1[0], p2[0], 2 + extra_points)
+                new_y_pts = np.linspace(p1[1], p2[1], 2 + extra_points)
+                new_segment_distance = segment_length / (extra_points + 1) # divide segment lengthh by the new number of segments i need
+                next_distance = new_segment_distance + self.trajectory.distances[i-1] # starting from the last point
+                for x_new, y_new in zip(new_x_pts[1:-1], new_y_pts[1:-1]): # skips p1 and p2
+                    new_path.append((x_new, y_new))
+                    new_distances.append(next_distance)
+                    next_distance += new_segment_distance
+            new_path.append(p2)
+            new_distances.append(cummulative_segment_length_to_p2)
+        # new_path = self.trajectory.points
         self.path = np.array(new_path) # list of x, y tuples --> 2d array
 
 
@@ -173,11 +175,11 @@ class PurePursuit(Node):
         # self.get_logger().info(f'{self.LOOKAHEAD=}')
 
         # Get the lookahead target point (in map frame)
-        target_point = self.get_lookahead_point(self.path)
+        target_point, traj_vector = self.get_lookahead_point_traj_vector(self.path)
         VisualizationTools.draw_sphere(target_point[0], target_point[1], self.target_pub, frame="/map", color=(0.5, 0.0, 0.5), scale=(0.3, 0.3, 0.3))
 
         # Use the target point to update the drive command using our implementation of pure pursuit
-        pure_pursuit_drive_cmd = self.update_control(target_point)
+        pure_pursuit_drive_cmd = self.update_control(target_point, traj_vector)
 
         # Update the command msg
         drive_cmd.drive = pure_pursuit_drive_cmd
@@ -185,10 +187,10 @@ class PurePursuit(Node):
 
         # publish the drive command instead of saving it
         # self.drive_cmd = drive_cmd
-        self.get_logger().info(f'Drive command sent: {drive_cmd.drive.speed} to {self.drive_topic}')
+        # self.get_logger().info(f'Drive command sent: {drive_cmd.drive.speed} to {self.drive_topic}')
         self.drive_pub.publish(drive_cmd)
 
-    def get_lookahead_point(self, path):
+    def get_lookahead_point_traj_vector(self, path):
         """
         Returns the first point on the path at least LOOKAHEAD distance away.
         """
@@ -216,14 +218,19 @@ class PurePursuit(Node):
         # If there is at least one valid point,
         if len(valid_points) > 0:
             # Return the first point in the array. This is the point closest to the lookahead distance
-            return np.array(list(valid_points[0]))
+            # Also return the vector between the first and second points, if it exists
+            if len(valid_points) > 1:
+                line_traj_vector = np.array(list(valid_points[1])) - np.array(list(valid_points[0]))
+                return np.array(list(valid_points[0])), line_traj_vector
+            
+            return np.array(list(valid_points[0])), None
         # If there are no valid points,
         else:
             # Just return the last point in the path as a fallback
             self.get_logger().info(f"No valid points > LOOKAHEAD to follow. Following last point")
-            return np.array(list(path[-1]))
+            return np.array(list(path[-1])), None
 
-    def update_control(self, target_point):
+    def update_control(self, target_point, traj_vector=None):
         """
         Returns the ackerman drive command
         """
@@ -271,11 +278,9 @@ class PurePursuit(Node):
                                     self.MAX_STEERING_ANGLE))
 
         else: # if it is in front of us reasonable angle, give it that angle
-            drive.steering_angle = float(np.clip(new_steering_angle,
-                                    -self.MAX_STEERING_ANGLE,
-                                    self.MAX_STEERING_ANGLE))
-
-            drive.speed = self.get_speed_by_proximity(goal_dist)
+            new_steering_angle = float(np.clip(new_steering_angle, -self.MAX_STEERING_ANGLE, self.MAX_STEERING_ANGLE))
+            drive.steering_angle = new_steering_angle
+            drive.speed = self.get_speed_by_proximity(goal_dist, new_steering_angle, traj_vector)
 
         return drive
 
@@ -295,14 +300,28 @@ class PurePursuit(Node):
         # not clipping because we want to check potential reverse behavior
         return delta
 
-    def get_speed_by_proximity(self, distance_to_goal):
+    def get_speed_by_proximity(self, distance_to_goal, steering_angle, traj_vector):
         """
         Return speed based on how close it is to the goal
         """
-        if distance_to_goal > 1.25:
-            return self.speed
+        
+        if traj_vector is not None:
+            traj_vector_norm = traj_vector / np.linalg.norm(traj_vector)
+            
+            cos_theta = np.dot(traj_vector_norm, np.array([1.0,0.0]))
+
+            angle = -np.arccos(np.clip(cos_theta, -1.0, 1.0))
+
+            angle_too_wide = np.degrees(abs(angle - self.theta)) > 15.0
+
+            self.get_logger().info(f"traj angle: {np.degrees(angle)} our angle: {np.degrees(self.theta)}")
         else:
+            angle_too_wide = False
+
+        if distance_to_goal <= 1.25 or steering_angle >= self.MAX_STEERING_ANGLE / 2 or angle_too_wide:
             return 0.5
+        else:
+            return self.speed
 
     def world_to_vehicle(self, point):
         dx = point[0] - self.x
