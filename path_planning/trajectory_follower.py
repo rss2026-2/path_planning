@@ -138,7 +138,7 @@ class PurePursuit(Node):
 
         # visualize the path
         x, y = zip(*new_path)
-        VisualizationTools.plot_line(list(x), list(y), self.line_pub, frame="/map")
+        VisualizationTools.plot_line(list(x), list(y), self.line_pub, frame="/map", type=Marker.POINTS) # Marker.LINE_STRIP for lines
 
         self.get_logger().info(f'\n***New Path Recieved: {len(new_path)} points ***')
 
@@ -174,8 +174,7 @@ class PurePursuit(Node):
 
         # Get the lookahead target point (in map frame)
         target_point = self.get_lookahead_point(self.path)
-        VisualizationTools.plot_line([target_point[0]], [target_point[1]], self.target_pub, frame="/map", color=(0.5, 0.0, 0.5), scale=(0.5, 0.5))
-        
+        VisualizationTools.draw_sphere(target_point[0], target_point[1], self.target_pub, frame="/map", color=(0.5, 0.0, 0.5), scale=(0.3, 0.3, 0.3))
 
         # Use the target point to update the drive command using our implementation of pure pursuit
         pure_pursuit_drive_cmd = self.update_control(target_point)
