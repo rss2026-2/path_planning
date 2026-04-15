@@ -47,7 +47,7 @@ class LineTrajectory:
 
     def distance_to_end(self, t):
         if not len(self.points) == len(self.distances):
-            print(
+            self.node.get_logger().info(
                 "WARNING: Different number of distances and points, this should never happen! Expect incorrect results. See LineTrajectory class.")
         dat = self.distance_along_trajectory(t)
         if dat is None:
@@ -68,7 +68,7 @@ class LineTrajectory:
             return (1.0 - t) * self.distances[i] + t * self.distances[i + 1]
 
     def addPoint(self, point: Tuple[float, float]) -> None:
-        print("adding point to trajectory:", point)
+        self.node.get_logger().info("adding point to trajectory:", point)
         self.points.append(point)
         self.update_distances()
         self.mark_dirty()
@@ -82,7 +82,7 @@ class LineTrajectory:
         return len(self.points) == 0
 
     def save(self, path):
-        print("Saving trajectory to:", path)
+        self.node.get_logger().info("Saving trajectory to:", path)
         data = {}
         data["points"] = []
         for p in self.points:
@@ -97,7 +97,7 @@ class LineTrajectory:
         return not self.has_acceleration
 
     def load(self, path):
-        print("Loading trajectory:", path)
+        self.node.get_logger().info("Loading trajectory:", path)
 
         # resolve all env variables in path
         path = os.path.expandvars(path)
@@ -107,7 +107,7 @@ class LineTrajectory:
             for p in json_data["points"]:
                 self.points.append((p["x"], p["y"]))
         self.update_distances()
-        print("Loaded:", len(self.points), "points")
+        self.node.get_logger().info("Loaded:", len(self.points), "points")
         self.mark_dirty()
 
     # build a trajectory class instance from a trajectory message
@@ -116,7 +116,7 @@ class LineTrajectory:
             self.points.append((p.position.x, p.position.y))
         self.update_distances()
         self.mark_dirty()
-        print("Loaded new trajectory with:", len(self.points), "points")
+        self.node.get_logger().info("Loaded new trajectory with:", len(self.points), "points")
 
     def toPoseArray(self):
         traj = PoseArray()
@@ -157,12 +157,15 @@ class LineTrajectory:
                 marker.action = 2
 
             self.start_pub.publish(marker)
+            self.node.get_logger().info("Start point published")
         elif self.start_pub.get_subscription_count() == 0:
             self.node.get_logger().info("Not publishing start point, no subscribers")
 
     def publish_end_point(self, duration=0.0):
         should_publish = len(self.points) > 1
+        self.node.get_logger().info("Before publishing end point")
         if self.visualize and self.end_pub.get_subscription_count() > 0:
+            self.node.get_logger().info("Publishing end point")
             marker = Marker()
             marker.header = self.make_header("/map")
             marker.ns = self.viz_namespace + "/trajectory"
@@ -186,11 +189,13 @@ class LineTrajectory:
                 marker.action = 2
 
             self.end_pub.publish(marker)
+            self.node.get_logger().info("End point published")
         elif self.end_pub.get_subscription_count() == 0:
-            print("Not publishing end point, no subscribers")
+            self.node.get_logger().info("Not publishing end point, no subscribers")
 
     def publish_trajectory(self, duration=0.0):
         should_publish = len(self.points) > 1
+        self.node.get_logger().info("Before publishing trajectory")
         if self.visualize and self.traj_pub.get_subscription_count() > 0:
             self.node.get_logger().info("Publishing trajectory")
             marker = Marker()
@@ -214,15 +219,16 @@ class LineTrajectory:
                     marker.points.append(pt)
             else:
                 # delete
+                self.node.get_logger().info("Not publishing trajectory because self.points < 2")
                 marker.action = marker.DELETE
             self.traj_pub.publish(marker)
-            print('publishing traj')
+            self.node.get_logger().info("Trajectory published")
         elif self.traj_pub.get_subscription_count() == 0:
-            print("Not publishing trajectory, no subscribers")
+            self.node.get_logger().info("Not publishing trajectory, no subscribers")
 
     def publish_viz(self, duration=0):
         if not self.visualize:
-            print("Cannot visualize path, not initialized with visualization enabled")
+            self.node.get_logger().info("Cannot visualize path, not initialized with visualization enabled")
             return
         self.publish_start_point(duration=duration)
         self.publish_trajectory(duration=duration)

@@ -1,13 +1,48 @@
 <launch>
+    <!-- Safety controller -->
     <node pkg="safety_controller" name="controller" exec="controller" output="screen">
     </node>
+
+    <!-- Localization -->
     <node pkg="localization" exec="particle_filter" name="particle_filter" output="screen">
         <param from="$(find-pkg-share path_planning)/config/real/pf_config.yaml"/>
     </node>
+    
+    <!-- !!! Start of launch commands for localization_simulate.launch.xml !!! -->
+    <!-- Listen to messages from joysicks -->
+    <node pkg="joy" name="joy_node" exec="joy_node"/>
+
+
+    <!-- Launches map from map folder and map server-->
+    <arg name="map" default="$(find-pkg-share racecar_simulator)/maps/stata_basement.yaml"/>
+    <node name="map_server" pkg="nav2_map_server" exec="map_server" output="screen">
+        <param name="yaml_filename" value="$(var map)"/>
+    </node>
+
+    <node name="lifecycle_manager" exec="lifecycle_manager" pkg="nav2_lifecycle_manager" output="screen"> 
+        <param name="autostart" value="True"/>
+        <param name="node_names" value="['map_server']"/>
+    </node>
+
+    <!-- Launches racecar model-->
+    <group>
+        <include file="$(find-pkg-share racecar_simulator)/launch/racecar_model.launch.xml"/>
+    </group>
+  
+    <!--Begin the simulator with parameters from params.yaml-->
+    <node pkg="racecar_simulator" name="racecar_simulator" exec="simulate" output="screen">
+        <param from="$(find-pkg-share racecar_simulator)/localization_params.yaml"/>  
+    </node>
+    <!-- !!! End of launch commands for localization_simulate.launch.xml !!! -->
+
+    <!-- Trajectory follower -->
     <node pkg="path_planning" exec="trajectory_follower" name="trajectory_follower">
         <param from="$(find-pkg-share path_planning)/config/real/config.yaml"/>
     </node>
+
+    <!-- Trajectory loader -->
     <node pkg="path_planning" exec="trajectory_loader" name="trajectory_loader">
-        <param name-"trajectory" value="$(find-pkg-share path_planning)/example_trajectories/trajectory_3.traj"/>
+        <param name="trajectory" value="$(find-pkg-share path_planning)/example_trajectories/trajectory_3.traj"/>
     </node>
-</launch>
+
+</launch> 

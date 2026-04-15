@@ -1,6 +1,6 @@
-trajectory_planner:
-  ros__parameters:
-    parameter: "fill this in :)"
+# trajectory_planner:
+#   ros__parameters:
+#     parameter: "fill this in :)"
 trajectory_follower:
   ros__parameters:
     odom_topic: "/pf/pose/odom"

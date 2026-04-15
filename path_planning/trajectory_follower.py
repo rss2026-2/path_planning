@@ -12,6 +12,7 @@ import numpy as np
 from std_msgs.msg import Header
 from geometry_msgs.msg import Point
 from scipy.spatial.transform import Rotation as R
+from safety_controller.visualization_tools import VisualizationTools
 
 class PurePursuit(Node):
     """ Implements Pure Pursuit trajectory tracking with a fixed lookahead and speed.
@@ -19,14 +20,14 @@ class PurePursuit(Node):
 
     def __init__(self):
         super().__init__("trajectory_follower")
-        self.declare_parameter('odom_topic', "default") # /pf/pose/odom - the localization pf pose estimate
-        self.declare_parameter('drive_topic', "default")
+        self.declare_parameter('odom_topic', "pf/pose/odom") # /pf/pose/odom - the localization pf pose estimate
+        self.declare_parameter('drive_topic', "vesc/low_level/input/navigation")
 
         self.odom_topic = self.get_parameter('odom_topic').get_parameter_value().string_value
         self.drive_topic = self.get_parameter('drive_topic').get_parameter_value().string_value
 
         # self.lookahead = 0.8  # FILL IN # this was our default before
-        self.speed = 1.0  # FILL IN # we want to test with different speeds
+        self.speed = 2.0  # FILL IN # we want to test with different speeds
         self.wheelbase_length = 0.325 # FILL IN # Need to check this number
 
         self.initialized_traj = False
@@ -61,7 +62,7 @@ class PurePursuit(Node):
         self.declare_parameter("discretization_length", 1.0)
         # self.CAR_LENGTH = self.get_parameter('car_length').get_parameter_value().double_value # replaced with self.wheelbase_length
         self.MAX_STEERING_ANGLE = self.get_parameter('max_steering_angle').get_parameter_value().double_value
-        self.VELOCITY = self.get_parameter('velocity').get_parameter_value().double_value # replaced with self.speed
+        # self.VELOCITY = self.get_parameter('velocity').get_parameter_value().double_value # replaced with self.speed
         self.LOOKAHEAD = self.get_parameter('lookahead').get_parameter_value().double_value
         self.EPSILON = self.get_parameter('error_epsilon').get_parameter_value().double_value
         self.STEERING_ANGLE_THRESH = 1.2 # initially working with it at 0.9 but it was reversing a lot
@@ -69,10 +70,11 @@ class PurePursuit(Node):
         self.DISCRETIZATION_LENGTH = self.get_parameter('discretization_length').get_parameter_value().double_value
 
         # this could mess things up:
-        self.speed = self.VELOCITY
-        # self.lookahead = self.LOOKAHEAD
+        # self.speed = self.VELOCITY
+        self.LOOKAHEAD = 0.6 + 0.2 * self.speed
         self.path = None
         self.line_pub = self.create_publisher(Marker, '/drive_line', 10)
+        self.target_pub = self.create_publisher(Marker, '/target_point', 10)
 
 
     def pose_callback(self, odometry_msg):
@@ -105,29 +107,29 @@ class PurePursuit(Node):
 
         self.initialized_traj = True
 
-        x, y = zip(*self.trajectory.points)
-        VisualizationTools.plot_line(list(x), list(y), self.line_pub, color=(0.0, 1.0, 0.0))
+        # x, y = zip(*self.trajectory.points)
+        # VisualizationTools.plot_line(list(x), list(y), self.line_pub, color=(0.0, 1.0, 0.0))
 
         # added:  discretizing the path
-        new_path = [self.trajectory.points[0]] # initialize with the first point
-        new_distances = [0]
-        for i in range(1, len(self.trajectory.distances)):
-            cummulative_segment_length_to_p2 = self.trajectory.distances[i]
-            p1, p2 = self.trajectory.points[i-1], self.trajectory.points[i]
-            segment_length = cummulative_segment_length_to_p2 - self.trajectory.distances[i-1]
-            if segment_length > self.DISCRETIZATION_LENGTH:
-                extra_points = int (segment_length // self.DISCRETIZATION_LENGTH) - 1 # one point less than the number of segments
-                new_x_pts = np.linspace(p1[0], p2[0], 2 + extra_points)
-                new_y_pts = np.linspace(p1[1], p2[1], 2 + extra_points)
-                new_segment_distance = segment_length / (extra_points + 1) # divide segment lengthh by the new number of segments i need
-                next_distance = new_segment_distance + self.trajectory.distances[i-1] # starting from the last point
-                for x_new, y_new in zip(new_x_pts[1:-1], new_y_pts[1:-1]): # skips p1 and p2
-                    new_path.append((x_new, y_new))
-                    new_distances.append(next_distance)
-                    next_distance += new_segment_distance
-            new_path.append(p2)
-            new_distances.append(cummulative_segment_length_to_p2)
-
+        # new_path = [self.trajectory.points[0]] # initialize with the first point
+        # new_distances = [0]
+        # for i in range(1, len(self.trajectory.distances)):
+        #     cummulative_segment_length_to_p2 = self.trajectory.distances[i]
+        #     p1, p2 = self.trajectory.points[i-1], self.trajectory.points[i]
+        #     segment_length = cummulative_segment_length_to_p2 - self.trajectory.distances[i-1]
+        #     if segment_length > self.DISCRETIZATION_LENGTH:
+        #         extra_points = int (segment_length // self.DISCRETIZATION_LENGTH) - 1 # one point less than the number of segments
+        #         new_x_pts = np.linspace(p1[0], p2[0], 2 + extra_points)
+        #         new_y_pts = np.linspace(p1[1], p2[1], 2 + extra_points)
+        #         new_segment_distance = segment_length / (extra_points + 1) # divide segment lengthh by the new number of segments i need
+        #         next_distance = new_segment_distance + self.trajectory.distances[i-1] # starting from the last point
+        #         for x_new, y_new in zip(new_x_pts[1:-1], new_y_pts[1:-1]): # skips p1 and p2
+        #             new_path.append((x_new, y_new))
+        #             new_distances.append(next_distance)
+        #             next_distance += new_segment_distance
+        #     new_path.append(p2)
+        #     new_distances.append(cummulative_segment_length_to_p2)
+        new_path = self.trajectory.points
         self.path = np.array(new_path) # list of x, y tuples --> 2d array
 
 
@@ -135,8 +137,8 @@ class PurePursuit(Node):
         self.end_x, self.end_y = new_path[-1]
 
         # visualize the path
-        # x, y = zip(*new_path)
-        # VisualizationTools.plot_line(list(x), list(y), self.line_pub)
+        x, y = zip(*new_path)
+        VisualizationTools.plot_line(list(x), list(y), self.line_pub, frame="/map")
 
         self.get_logger().info(f'\n***New Path Recieved: {len(new_path)} points ***')
 
@@ -172,6 +174,8 @@ class PurePursuit(Node):
 
         # Get the lookahead target point (in map frame)
         target_point = self.get_lookahead_point(self.path)
+        VisualizationTools.plot_line([target_point[0]], [target_point[1]], self.target_pub, frame="/map", color=(0.5, 0.0, 0.5), scale=(0.5, 0.5))
+        
 
         # Use the target point to update the drive command using our implementation of pure pursuit
         pure_pursuit_drive_cmd = self.update_control(target_point)
@@ -182,7 +186,7 @@ class PurePursuit(Node):
 
         # publish the drive command instead of saving it
         # self.drive_cmd = drive_cmd
-        self.get_logger().info(f'Drive command sent: {drive_cmd.drive.speed}')
+        self.get_logger().info(f'Drive command sent: {drive_cmd.drive.speed} to {self.drive_topic}')
         self.drive_pub.publish(drive_cmd)
 
     def get_lookahead_point(self, path):
@@ -297,7 +301,7 @@ class PurePursuit(Node):
         Return speed based on how close it is to the goal
         """
         if distance_to_goal > 1.25:
-            return self.VELOCITY
+            return self.speed
         else:
             return 0.5
 
@@ -312,49 +316,6 @@ class PurePursuit(Node):
         y_car = -sin_theta * dx + cos_theta * dy
 
         return np.array([x_car, y_car])
-
-
-class VisualizationTools:
-
-    @staticmethod
-    def plot_line(x, y, publisher, color=(1.0, 0.0, 0.0), frame="/map"):
-        """
-        Publishes the points (x, y) to publisher
-        so they can be visualized in rviz as
-        connected line segments.
-        Args:
-            x, y: The x and y values. These arrays
-            must be of the same length.
-            publisher: the publisher to publish to. The
-            publisher must be of type Marker from the
-            visualization_msgs.msg class.
-            color: the RGB color of the plot.
-            frame: the transformation frame to plot in.
-        """
-        # Construct a line
-        line_strip = Marker()
-        line_strip.type = Marker.POINTS  # LINE_STRIP for with lines
-        line_strip.header.frame_id = frame
-
-        # Set the size and color
-        line_strip.scale.x = 0.1
-        line_strip.scale.y = 0.1
-        line_strip.color.a = 1.0
-        line_strip.color.r = color[0]
-        line_strip.color.g = color[1]
-        line_strip.color.b = color[2]
-
-        # Fill the line with the desired values
-        for xi, yi in zip(x, y):
-            p = Point()
-            p.x = xi
-            p.y = yi
-            line_strip.points.append(p)
-
-        # Publish the line
-        publisher.publish(line_strip)
-
-
 
 def main(args=None):
     rclpy.init(args=args)
