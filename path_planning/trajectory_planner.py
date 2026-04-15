@@ -17,7 +17,7 @@ class PathPlan(Node):
         super().__init__("trajectory_planner")
         self.declare_parameter('odom_topic', "/initialpose")
         self.declare_parameter('map_topic', "/map")
-        self.declare_parameter('rover_radius', 0.20)
+        self.declare_parameter('rover_radius', 0.60)
         self.declare_parameter('offline', False)
         self.declare_parameter('num_nodes', 250)
 
@@ -34,10 +34,10 @@ class PathPlan(Node):
         self.PRM_map = nx.Graph()
         self.tree = None
 
-        with open("/root/racecar_ws/path_planning_prm/roadmap_KDtree.pkl", 'rb') as f:
+        with open("/root/racecar_ws/path_planning_prm/roadmap_KDtree_big.pkl", 'rb') as f:
             self.tree = pickle.load(f)
 
-        with open("/root/racecar_ws/path_planning_prm/roadmap.pkl", 'rb') as f:
+        with open("/root/racecar_ws/path_planning_prm/roadmap_big.pkl", 'rb') as f:
             self.PRM_map = pickle.load(f)
 
         self.map_sub = self.create_subscription(OccupancyGrid, self.map_topic, self.map_cb, 1)
