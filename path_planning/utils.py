@@ -72,6 +72,12 @@ class LineTrajectory:
         self.points.append(point)
         self.update_distances()
         self.mark_dirty()
+    
+    def addPoints(self, points) -> None:
+        for point in points:
+            self.points.append(point)
+        self.update_distances()
+        self.mark_dirty()
 
     def clear(self):
         self.points = []
@@ -163,6 +169,7 @@ class LineTrajectory:
     def publish_end_point(self, duration=0.0):
         should_publish = len(self.points) > 1
         if self.visualize and self.end_pub.get_subscription_count() > 0:
+            self.node.get_logger().info("Publishing end point")
             marker = Marker()
             marker.header = self.make_header("/map")
             marker.ns = self.viz_namespace + "/trajectory"

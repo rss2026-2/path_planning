@@ -19,7 +19,11 @@ setup(
         (os.path.join('share', package_name, 'config', 'sim'), glob.glob('config/sim/*.yaml')),
         (os.path.join('share', package_name, 'config', 'real'), glob.glob('config/real/*.yaml')),
         (os.path.join('share', package_name, 'config', 'debug'), glob.glob('config/debug/*.yaml')),
-        ('share/path_planning/example_trajectories', glob.glob(os.path.join('example_trajectories', '*.traj')))],
+        ('share/path_planning/example_trajectories', glob.glob(os.path.join('example_trajectories', '*.traj'))),
+        (os.path.join('share', package_name, 'maps'), glob.glob('maps/*.yaml')),
+        (os.path.join('share', package_name, 'maps'), glob.glob('maps/*.png'))],
+        
+        
     install_requires=['setuptools'],
     zip_safe=True,
     maintainer='Sebastian',
