@@ -20,19 +20,28 @@ class PurePursuit(Node):
 
     def __init__(self):
         super().__init__("trajectory_follower")
+        # -- Declared parameters --
         self.declare_parameter('odom_topic', "pf/pose/odom") # /pf/pose/odom - the localization pf pose estimate
         self.declare_parameter('drive_topic', "vesc/low_level/input/navigation")
+        # added in the last pure pursuit
+        # self.declare_parameter("car_length", 0.325) # replaced with self.wheelbase_length
+        self.declare_parameter("max_steering_angle", 0.34)
+        self.declare_parameter("speed", 0.7)
+        self.declare_parameter("lookahead", 0.8)
+        self.declare_parameter("error_epsilon", 1.0)
+        self.declare_parameter("discretization_length", 3.5)
 
+        # -- Assigning variables -- 
         self.odom_topic = self.get_parameter('odom_topic').get_parameter_value().string_value
         self.drive_topic = self.get_parameter('drive_topic').get_parameter_value().string_value
+        # self.CAR_LENGTH = self.get_parameter('car_length').get_parameter_value().double_value # replaced with self.wheelbase_length
+        self.MAX_STEERING_ANGLE = self.get_parameter('max_steering_angle').get_parameter_value().double_value
+        self.SPEED = self.get_parameter('speed').get_parameter_value().double_value
+        self.LOOKAHEAD = self.get_parameter('lookahead').get_parameter_value().double_value
+        self.EPSILON = self.get_parameter('error_epsilon').get_parameter_value().double_value
+        self.DISCRETIZATION_LENGTH = self.get_parameter('discretization_length').get_parameter_value().double_value
 
-        # self.lookahead = 0.8  # FILL IN # this was our default before
-        self.speed = 1.0  # FILL IN # we want to test with different speeds
-        self.wheelbase_length = 0.325 # FILL IN # Need to check this number
-
-        self.initialized_traj = False
-        self.trajectory = LineTrajectory(self, "/followed_trajectory")
-
+        # -- Publishers and subscribers -- 
         self.pose_sub = self.create_subscription(Odometry,
                                                  self.odom_topic,
                                                  self.pose_callback,
@@ -44,40 +53,26 @@ class PurePursuit(Node):
         self.drive_pub = self.create_publisher(AckermannDriveStamped,
                                                self.drive_topic,
                                                1) # publish drive commands here
+        self.line_pub = self.create_publisher(Marker, '/drive_line', 10)
+        self.target_pub = self.create_publisher(Marker, '/target_point', 10)
+        self.lookahead_pub = self.create_publisher(Marker, '/lookahead_line', 10)
 
-        # Added
+        # -- Other constant vars --
+        self.STEERING_ANGLE_THRESH = 1.2 # initially working with it at 0.9 but it was reversing a lot
+        self.WHEELBASE_LENGTH = 0.325 # FILL IN # Need to check this number
+        self.LOOKAHEAD = 0.8 + 0.2 * self.SPEED
+
+        # -- Initialized vars -- 
+        # Car odometry
         self.x = None
         self.y = None
         self.theta = None
+        self.initialized_traj = False
+        self.path = None
+        self.trajectory = LineTrajectory(self, "/followed_trajectory")
 
         timer_rate = 25
-        self.create_timer(1/timer_rate, self.timer_callback)
-
-        # added in the last pure pursuit
-        # self.declare_parameter("car_length", 0.325) # replaced with self.wheelbase_length
-        self.declare_parameter("max_steering_angle", 0.34)
-        self.declare_parameter("velocity", 0.5)
-        self.declare_parameter("lookahead", 0.8)
-        self.declare_parameter("error_epsilon", 1.0)
-        self.declare_parameter("discretization_length", 0.2)
-        # self.CAR_LENGTH = self.get_parameter('car_length').get_parameter_value().double_value # replaced with self.wheelbase_length
-        self.MAX_STEERING_ANGLE = self.get_parameter('max_steering_angle').get_parameter_value().double_value
-        # self.VELOCITY = self.get_parameter('velocity').get_parameter_value().double_value # replaced with self.speed
-        self.LOOKAHEAD = self.get_parameter('lookahead').get_parameter_value().double_value
-        self.EPSILON = self.get_parameter('error_epsilon').get_parameter_value().double_value
-        self.STEERING_ANGLE_THRESH = 1.2 # initially working with it at 0.9 but it was reversing a lot
-
-        self.DISCRETIZATION_LENGTH = self.get_parameter('discretization_length').get_parameter_value().double_value
-
-        # this could mess things up:
-        # self.speed = self.VELOCITY
-        self.LOOKAHEAD = 0.8 + 0.2 * self.speed
-        self.path = None
-        self.line_pub = self.create_publisher(Marker, '/drive_line', 10)
-        self.target_pub = self.create_publisher(Marker, '/target_point', 10)
-
-        self.lookahead_pub = self.create_publisher(Marker, '/lookahead_line', 10)
-
+        self.create_timer(1/timer_rate, self.timer_callback)        
 
     def pose_callback(self, odometry_msg):
         """
@@ -133,7 +128,6 @@ class PurePursuit(Node):
             new_distances.append(cummulative_segment_length_to_p2)
         # new_path = self.trajectory.points
         self.path = np.array(new_path) # list of x, y tuples --> 2d array
-
 
         # set the x and y points for the end point (in the map frame)
         self.end_x, self.end_y = new_path[-1]
@@ -292,7 +286,7 @@ class PurePursuit(Node):
 
         # pure pursuit steering law
         delta = np.arctan2(
-            2 * self.wheelbase_length * goal_vector[1],
+            2 * self.WHEELBASE_LENGTH * goal_vector[1],
             lookahead_dist**2
         )
 
@@ -310,18 +304,18 @@ class PurePursuit(Node):
             
             cos_theta = np.dot(traj_vector_norm, np.array([1.0,0.0]))
 
-            angle = -np.arccos(np.clip(cos_theta, -1.0, 1.0))
+            angle = np.abs(np.arccos(np.clip(cos_theta, -1.0, 1.0)))
 
-            angle_too_wide = np.degrees(abs(angle - self.theta)) > 15.0
+            angle_too_wide = np.degrees(abs(angle) - abs(self.theta)) >= 45.0
 
-            self.get_logger().info(f"traj angle: {np.degrees(angle)} our angle: {np.degrees(self.theta)}")
+            # self.get_logger().info(f"traj angle: {np.degrees(angle)} our angle: {np.degrees(self.theta)}")
         else:
             angle_too_wide = False
 
         if distance_to_goal <= 1.25 or steering_angle >= self.MAX_STEERING_ANGLE / 2 or angle_too_wide:
             return 0.5
         else:
-            return self.speed
+            return self.SPEED
 
     def world_to_vehicle(self, point):
         dx = point[0] - self.x
