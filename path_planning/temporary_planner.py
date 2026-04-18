@@ -19,7 +19,7 @@ class PathPlan(Node):
         self.declare_parameter('map_topic', "/map")
         self.declare_parameter('rover_radius', 0.6)
         self.declare_parameter('offline', False)
-        self.declare_parameter('num_nodes', 250)
+        self.declare_parameter('num_nodes', 5000)
 
         self.rover_radius = self.get_parameter('rover_radius').value
         self.odom_topic = self.get_parameter('odom_topic').get_parameter_value().string_value
