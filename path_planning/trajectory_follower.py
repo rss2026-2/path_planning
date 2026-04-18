@@ -22,7 +22,7 @@ class PurePursuit(Node):
         super().__init__("trajectory_follower")
         # -- Declared parameters --
         self.declare_parameter('odom_topic', "pf/pose/odom") # /pf/pose/odom - the localization pf pose estimate
-        self.declare_parameter('drive_topic', "vesc/low_level/input/navigation")
+        self.declare_parameter('drive_topic', "/drive")
         # added in the last pure pursuit
         # self.declare_parameter("car_length", 0.325) # replaced with self.wheelbase_length
         self.declare_parameter("max_steering_angle", 0.34)
