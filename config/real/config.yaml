@@ -1,6 +1,7 @@
 trajectory_planner:
   ros__parameters:
     odom_topic: "/initialpose"
+    offline: False
 trajectory_follower:
   ros__parameters:
     odom_topic: "/pf/pose/odom"

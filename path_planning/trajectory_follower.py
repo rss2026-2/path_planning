@@ -12,7 +12,7 @@ import numpy as np
 from std_msgs.msg import Header
 from geometry_msgs.msg import Point
 from scipy.spatial.transform import Rotation as R
-from safety_controller.visualization_tools import VisualizationTools
+from viz_utils.visualization_tools import VisualizationTools
 
 class PurePursuit(Node):
     """ Implements Pure Pursuit trajectory tracking with a fixed lookahead and speed.
@@ -29,7 +29,7 @@ class PurePursuit(Node):
         self.declare_parameter("speed", 0.7)
         self.declare_parameter("lookahead", 0.8)
         self.declare_parameter("error_epsilon", 1.0)
-        self.declare_parameter("discretization_length", 3.5)
+        self.declare_parameter("discretization_length", 1.0)
 
         # -- Assigning variables -- 
         self.odom_topic = self.get_parameter('odom_topic').get_parameter_value().string_value
@@ -104,8 +104,10 @@ class PurePursuit(Node):
 
         self.initialized_traj = True
 
+        stamp = self.get_clock().now().to_msg()
+
         x, y = zip(*self.trajectory.points)
-        VisualizationTools.plot_line(list(x), list(y), self.line_pub, color=(0.0, 1.0, 0.0))
+        VisualizationTools.draw_line(list(x), list(y), self.line_pub, stamp, color=(0.0, 1.0, 0.0))
 
         # added:  discretizing the path
         new_path = [self.trajectory.points[0]] # initialize with the first point
@@ -134,7 +136,7 @@ class PurePursuit(Node):
 
         # visualize the path
         x, y = zip(*new_path)
-        VisualizationTools.plot_line(list(x), list(y), self.line_pub, frame="/map", type=Marker.POINTS) # Marker.LINE_STRIP for lines
+        VisualizationTools.draw_line(list(x), list(y), self.line_pub, stamp, frame="/map", type=Marker.POINTS) # Marker.LINE_STRIP for lines
 
         self.get_logger().info(f'\n***New Path Recieved: {len(new_path)} points ***')
 
@@ -149,7 +151,8 @@ class PurePursuit(Node):
         # self.get_logger().info(f'New Drive Command')
 
         header = Header()
-        header.stamp = self.get_clock().now().to_msg()
+        stamp = self.get_clock().now().to_msg()
+        header.stamp = stamp
         header.frame_id = 'base_link' # is this still true?
         drive_cmd.header = header
 
@@ -170,7 +173,7 @@ class PurePursuit(Node):
 
         # Get the lookahead target point (in map frame)
         target_point, traj_vector = self.get_lookahead_point_traj_vector(self.path)
-        VisualizationTools.draw_sphere(target_point[0], target_point[1], self.target_pub, frame="/map", color=(0.5, 0.0, 0.5), scale=(0.3, 0.3, 0.3))
+        VisualizationTools.draw_sphere(target_point[0], target_point[1], self.target_pub, stamp, frame="/map", color=(0.5, 0.0, 0.5), scale=(0.3, 0.3, 0.3))
 
         # Use the target point to update the drive command using our implementation of pure pursuit
         pure_pursuit_drive_cmd = self.update_control(target_point, traj_vector)
