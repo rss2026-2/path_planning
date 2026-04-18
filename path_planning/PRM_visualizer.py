@@ -36,7 +36,7 @@ class RoadmapVisualizer(Node):
             x_arr.append(x)
             y_arr.append(y)
         
-        VisualizationTools.draw_line(x_arr, y_arr, self.publisher, stamp, frame, type=Marker.POINTS, scale=scale, color=color)
+        VisualizationTools.draw_points(x_arr, y_arr, self.publisher, stamp, frame, type=Marker.POINTS, scale=scale, color=color)
 
         self.get_logger().info("published")
 

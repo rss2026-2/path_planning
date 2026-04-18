@@ -136,7 +136,7 @@ class PurePursuit(Node):
 
         # visualize the path
         x, y = zip(*new_path)
-        VisualizationTools.draw_line(list(x), list(y), self.line_pub, stamp, frame="/map", type=Marker.POINTS) # Marker.LINE_STRIP for lines
+        VisualizationTools.draw_points(list(x), list(y), self.line_pub, stamp, frame="/map") # type=Marker.LINE_STRIP for lines
 
         self.get_logger().info(f'\n***New Path Recieved: {len(new_path)} points ***')
 
