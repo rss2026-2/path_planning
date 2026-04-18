@@ -72,6 +72,12 @@ class LineTrajectory:
         self.points.append(point)
         self.update_distances()
         self.mark_dirty()
+    
+    def addPoints(self, points) -> None:
+        for point in points:
+            self.points.append(point)
+        self.update_distances()
+        self.mark_dirty()
 
     def clear(self):
         self.points = []
