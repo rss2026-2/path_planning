@@ -29,59 +29,41 @@ class PathPlan(Node):
         super().__init__("trajectory_planner")
         self.declare_parameter('odom_topic', "/odom")
         self.declare_parameter('map_topic', "/map")
+        self.declare_parameter('safety_cell_radius', 5)
+        
+
+        #seperate trajectory publishers for path comparison
+        self.declare_parameter('viz_namespace', "/planned_trajectory")
+        self.declare_parameter("viz_traj_color", [1.0,1.0,1.0,1.0])
+        self.declare_parameter('publish_path', True)
+
 
         self.odom_topic = self.get_parameter('odom_topic').get_parameter_value().string_value
         self.map_topic = self.get_parameter('map_topic').get_parameter_value().string_value
+        self.safety_cell_radius = self.get_parameter('safety_cell_radius').get_parameter_value().integer_value
 
-        self.map_sub = self.create_subscription(
-            OccupancyGrid,
-            self.map_topic,
-            self.map_cb,
-            1)
+        self.viz_namespace = self.get_parameter("viz_namespace").get_parameter_value().string_value
+        self.viz_traj_color = self.get_parameter("viz_traj_color").get_parameter_value().double_array_value
+        self.publish_path = self.get_parameter('publish_path').get_parameter_value().bool_value
+    
 
-        self.goal_sub = self.create_subscription(
-            PoseStamped,
-            "/goal_pose",
-            self.goal_cb,
-            10
-        )
+        self.map_sub = self.create_subscription(OccupancyGrid, self.map_topic, self.map_cb, 1)
+        self.goal_sub = self.create_subscription(PoseStamped, "/goal_pose", self.goal_cb, 10)
+        self.pose_sub = self.create_subscription(Odometry, self.odom_topic, self.pose_cb, 10)
 
-        self.traj_pub = self.create_publisher(
-            PoseArray,
-            "/trajectory/current",
-            10
-        )
+        if self.publish_path:
+            self.traj_pub = self.create_publisher(PoseArray, "/trajectory/current", 10)
 
-        self.search_pub = self.create_publisher(
-            MarkerArray,
-            "/search_alg",
-            10
-        )
 
-        self.pose_sub = self.create_subscription(
-            Odometry,
-            self.odom_topic,
-            self.pose_cb,
-            10
-        )
+        self.search_pub = self.create_publisher(MarkerArray,"/search_alg",10)
 
-        self.trajectory = LineTrajectory(node=self, viz_namespace="/planned_trajectory")
+
+        self.trajectory = LineTrajectory(node=self, viz_namespace=self.viz_namespace)
         self.map = None
         self.pose = None
         
         #reset trials
         self.trials = []
-        fig, ax = plt.subplots()
-        colors = plt.cm.tab20(np.linspace(0, 1, len(self.trials)))
-        for i,trial in enumerate(self.trials):
-            ax.plot(trial["x"], trial["y"], marker = "o", color = colors[i], label = trial["label"])
-
-        ax.set_xlabel("Step Size (Cells)")
-        ax.set_ylabel("Time (ms)")
-        ax.legend(title = "Approx Distance To Goal (Cells)")
-        ax.set_title("Relationship between Step Size and Distance from Goal")
-        fig.savefig("src/path_planning/path_planning/generated_figs/step_size_trial.png", bbox_inches="tight")
-        plt.close(fig)
 
         self.get_logger().info("Awaiting Map")
 
@@ -114,9 +96,8 @@ class PathPlan(Node):
         transform_inverse[:3, 3] = -map_transform[:3,:3].T @ map_transform[:3, 3]
 
         occupancy_grid = np.array(map_msg.data).reshape(map_msg.info.height, map_msg.info.width)
-        
-        safety_cell_radius = 5
-        self.map_occupancy_expansion(occupancy_grid, safety_cell_radius)
+
+        self.map_occupancy_expansion(occupancy_grid, self.safety_cell_radius)
 
         self.map = {
             "res": map_msg.info.resolution,
@@ -173,10 +154,13 @@ class PathPlan(Node):
         )
 
         self.get_logger().info("Path Generated!")
-        self.trajectory.publish_viz()
+
+        if self.publish_path:
+            self.traj_pub.publish(self.trajectory.toPoseArray())
+            self.get_logger().info("Path Published!")
+
+        self.trajectory.publish_viz(traj_color = self.viz_traj_color)
         self.get_logger().info("Path Visualized!")
-        self.traj_pub.publish(self.trajectory.toPoseArray())
-        self.get_logger().info("Path Published!")
 
         # self.step_size_trial(start_point, end_point)
         pass
@@ -299,7 +283,7 @@ class PathPlan(Node):
         """Publish all accumulated edges as a single connected marker."""
         marker = Marker()
         marker.header.frame_id = "map"
-        marker.ns = "search_alg"
+        marker.ns = self.viz_namespace
         marker.id = 0
         marker.type = Marker.LINE_LIST
         marker.action = Marker.ADD

@@ -1,0 +1,25 @@
+<launch>
+    <node pkg="path_planning" exec="grid_search_planner" name="grid_search_planner" output="screen">
+        
+        <param name="odom_topic" value="/odom"/>
+        <param name="map_topic" value="/map"/>
+        <param name="safety_cell_radius" value="5"/>
+        <param name="publish_path" value="False"/>
+        <param name="viz_namespace" value="/grid_search_trajectory"/>
+        <param name="viz_traj_color" value="[1.0,0.0,0.0,0.6]"/>
+
+    </node>
+
+    <node pkg="path_planning" exec="sampling_planner" name="sampling_planner" output="screen">
+        
+        <param name="odom_topic" value="/initialpose"/>
+        <param name="map_topic" value="/map"/>
+        <param name="rover_radius" value="0.2"/>
+        <param name="offline" value="False"/>
+        <param name="num_nodes" value="250"/>
+        <param name="publish_path" value="False"/>
+        <param name="viz_namespace" value="/sampling_trajectory"/>
+        <param name="viz_traj_color" value="[0.0,0.0,1.0,0.6]"/>
+
+    </node>
+</launch>

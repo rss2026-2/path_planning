@@ -201,7 +201,7 @@ class LineTrajectory:
         elif self.end_pub.get_subscription_count() == 0:
             self.node.get_logger().info("Not publishing end point, no subscribers")
 
-    def publish_trajectory(self, duration=0.0):
+    def publish_trajectory(self, color, duration=0.0):
         should_publish = len(self.points) > 1
         self.node.get_logger().info("Before publishing trajectory")
         # if self.visualize and self.traj_pub.get_subscription_count() > 0:
@@ -211,14 +211,15 @@ class LineTrajectory:
             marker.header = self.make_header("/map")
             marker.ns = self.viz_namespace + "/trajectory"
             marker.id = 2
+
             marker.type = marker.LINE_STRIP  # line strip
             marker.lifetime = rclpy.duration.Duration(seconds=duration).to_msg()
             if should_publish:
                 marker.action = marker.ADD
                 marker.scale.x = 0.3
-                marker.color.r = 1.0
-                marker.color.g = 1.0
-                marker.color.b = 1.0
+                marker.color.r = color[0]
+                marker.color.g = color[1]
+                marker.color.b = color[2]
                 marker.color.a = 1.0
                 for p in self.points:
                     pt = Point()
@@ -235,12 +236,12 @@ class LineTrajectory:
         elif self.traj_pub.get_subscription_count() == 0:
             self.node.get_logger().info("Not publishing trajectory, no subscribers")
 
-    def publish_viz(self, duration=0):
+    def publish_viz(self, traj_color, duration=0):
         if not self.visualize:
             self.node.get_logger().info("Cannot visualize path, not initialized with visualization enabled")
             return
         self.publish_start_point(duration=duration)
-        self.publish_trajectory(duration=duration)
+        self.publish_trajectory(duration=duration, color = traj_color)
         self.publish_end_point(duration=duration)
 
     def make_header(self, frame_id, stamp=None):

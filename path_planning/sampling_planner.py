@@ -21,12 +21,21 @@ class PathPlan(Node):
         self.declare_parameter('offline', True)
         self.declare_parameter('num_nodes', 250)
 
+        #seperate trajectory publishers for path comparison
+        self.declare_parameter('viz_namespace', "/planned_trajectory")
+        self.declare_parameter("viz_traj_color", [1.0,1.0,1.0,1.0])
+        self.declare_parameter('publish_path', True)
+
         self.rover_radius = self.get_parameter('rover_radius').get_parameter_value().double_value
         self.odom_topic = self.get_parameter('odom_topic').get_parameter_value().string_value
         self.map_topic = self.get_parameter('map_topic').get_parameter_value().string_value
         self.offline = self.get_parameter('offline').get_parameter_value().bool_value
         self.num_nodes = self.get_parameter('num_nodes').get_parameter_value().integer_value
-        
+
+        self.viz_namespace = self.get_parameter('viz_namespace').get_parameter_value().string_value
+        self.viz_traj_color = self.get_parameter("viz_traj_color").get_parameter_value().double_array_value
+        self.publish_path = self.get_parameter('publish_path').get_parameter_value().bool_value
+
         self.start_point = None
         self.end_point = None
         self.occupancy_map = None
@@ -34,12 +43,14 @@ class PathPlan(Node):
         self.PRM_map = nx.Graph()
         self.tree = None
         
+        self.tree_file = "src/path_planning/path_planning_prm/roadmap_KDtree.pkl"
+        self.prm_map_file = "src/path_planning/path_planning_prm/roadmap.pkl"
         if not self.offline:
             self.get_logger().info("Attempting to load saved roadmap")
-            with open("src/path_planning/path_planning_prm/roadmap.pkl" + self.tree_file, 'rb') as f:
+            with open(self.tree_file, 'rb') as f:
                 self.tree = pickle.load(f)
 
-            with open("src/path_planning/path_planning_prm/roadmap_KDtree.pkl" + self.roadmap_file, 'rb') as f:
+            with open(self.prm_map_file, 'rb') as f:
                 self.PRM_map = pickle.load(f)
             
             self.get_logger().info("Successfully loaded saved roadmap")
@@ -47,15 +58,20 @@ class PathPlan(Node):
         self.map_sub = self.create_subscription(OccupancyGrid, self.map_topic, self.map_cb, 1)
         self.goal_sub = self.create_subscription(PoseStamped, "/goal_pose", self.goal_cb, 10)
         self.pose_sub = self.create_subscription(PoseWithCovarianceStamped, self.odom_topic, self.pose_cb, 10)
-        self.traj_pub = self.create_publisher(PoseArray, "/trajectory/current", 10)
+        
+        if self.publish_path:
+            self.traj_pub = self.create_publisher(PoseArray, "/trajectory/current", 10)
+        
         self.map_pub = self.create_publisher(OccupancyGrid, "/inflated_map", 10)
         # use this publisher for when visualizing several planners in one go
         # latch_qos = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
         # self.traj_pub = self.create_publisher(PoseArray, "/trajectory/current", latch_qos)
 
-        self.trajectory = LineTrajectory(node=self, viz_namespace="/planned_trajectory")
+        self.trajectory = LineTrajectory(node=self, viz_namespace=self.viz_namespace)
         
         self.get_logger().info("Awaiting Map")
+        if self.offline:
+            self.get_logger().warning(f"Once map is received, the following roadmaps will be overwritten:\n- {self.tree_file}\n- {self.prm_map_file}")
 
     def map_cb(self, msg):
         """
@@ -234,9 +250,13 @@ class PathPlan(Node):
             for p in points:
                 self.trajectory.addPoint(p)
 
-            self.traj_pub.publish(self.trajectory.toPoseArray())
-            self.trajectory.publish_viz()
-            self.get_logger().info("Path successfully planned and published.")
+            if self.publish_path:
+                self.traj_pub.publish(self.trajectory.toPoseArray())
+                self.get_logger().info("Path successfully planned and published.")
+
+            self.trajectory.publish_viz(traj_color = self.viz_traj_color)
+            self.get_logger().info("Path Visualized!")
+            
 
         except nx.NetworkXNoPath:
             self.get_logger().error("No path possible between start and end.")
