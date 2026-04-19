@@ -17,28 +17,32 @@ class PathPlan(Node):
         super().__init__("trajectory_planner")
         self.declare_parameter('odom_topic', "/initialpose")
         self.declare_parameter('map_topic', "/map")
-        self.declare_parameter('rover_radius', 0.6)
-        self.declare_parameter('offline', False)
-        self.declare_parameter('num_nodes', 5000)
+        self.declare_parameter('rover_radius', 0.2)
+        self.declare_parameter('offline', True)
+        self.declare_parameter('num_nodes', 250)
 
-        self.rover_radius = self.get_parameter('rover_radius').value
+        self.rover_radius = self.get_parameter('rover_radius').get_parameter_value().double_value
         self.odom_topic = self.get_parameter('odom_topic').get_parameter_value().string_value
         self.map_topic = self.get_parameter('map_topic').get_parameter_value().string_value
-        self.offline = self.get_parameter('offline').value
-        self.num_nodes = self.get_parameter('num_nodes').value
-        self.offline = True
+        self.offline = self.get_parameter('offline').get_parameter_value().bool_value
+        self.num_nodes = self.get_parameter('num_nodes').get_parameter_value().integer_value
+        
         self.start_point = None
         self.end_point = None
         self.occupancy_map = None
 
         self.PRM_map = nx.Graph()
         self.tree = None
+        
+        if not self.offline:
+            self.get_logger().info("Attempting to load saved roadmap")
+            with open("src/path_planning/path_planning_prm/roadmap.pkl" + self.tree_file, 'rb') as f:
+                self.tree = pickle.load(f)
 
-        # with open("/root/racecar_ws/path_planning_prm/roadmap_KDtree_big.pkl", 'rb') as f:
-        #     self.tree = pickle.load(f)
-
-        # with open("/root/racecar_ws/path_planning_prm/roadmap_big.pkl", 'rb') as f:
-        #     self.PRM_map = pickle.load(f)
+            with open("src/path_planning/path_planning_prm/roadmap_KDtree.pkl" + self.roadmap_file, 'rb') as f:
+                self.PRM_map = pickle.load(f)
+            
+            self.get_logger().info("Successfully loaded saved roadmap")
 
         self.map_sub = self.create_subscription(OccupancyGrid, self.map_topic, self.map_cb, 1)
         self.goal_sub = self.create_subscription(PoseStamped, "/goal_pose", self.goal_cb, 10)
@@ -50,6 +54,8 @@ class PathPlan(Node):
         # self.traj_pub = self.create_publisher(PoseArray, "/trajectory/current", latch_qos)
 
         self.trajectory = LineTrajectory(node=self, viz_namespace="/planned_trajectory")
+        
+        self.get_logger().info("Awaiting Map")
 
     def map_cb(self, msg):
         """
@@ -74,13 +80,15 @@ class PathPlan(Node):
 
         height,width = msg.info.height, msg.info.width
         map_data = np.array(msg.data, np.double)
-        binary_map = (map_data < 50).astype(np.uint8).reshape((height, width), order='C')  # reshape FIRST
+        reshaped_map = map_data.reshape((height, width), order='C')
+        binary_map = (reshaped_map < 50).astype(np.uint8)
 
         kernel = np.ones((3,3), np.uint8)
         binary_map = cv2.erode(binary_map, kernel)
 
         dist_map = cv2.distanceTransform(binary_map, cv2.DIST_L2, 5)
         safe_map = (dist_map > pixel_radius).astype(np.int8)
+        safe_map[reshaped_map == -1] = 0 #Set unknown to occupied
 
         self.occupancy_map = safe_map
         self.visualize_map(msg)
@@ -96,7 +104,8 @@ class PathPlan(Node):
             prm_generator = PRM(self.occupancy_map, msg, self.num_nodes)
             self.PRM_map = prm_generator.roadmap
             self.tree = prm_generator.tree
-            self.get_logger().info("PRM ready for planning.")
+
+        self.get_logger().info("PRM ready for planning.")
 
     def visualize_map(self,msg):
         """
@@ -112,7 +121,7 @@ class PathPlan(Node):
         viz_msg.header = msg.header
         viz_msg.info = msg.info
 
-        original = np.array(msg.data, dtype=np.int16).reshape(
+        original = np.array(msg.data, dtype=np.int8).reshape(
             (msg.info.height, msg.info.width)
         )
 

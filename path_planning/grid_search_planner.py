@@ -27,8 +27,8 @@ class PathPlan(Node):
 
     def __init__(self):
         super().__init__("trajectory_planner")
-        self.declare_parameter('odom_topic', "default")
-        self.declare_parameter('map_topic', "default")
+        self.declare_parameter('odom_topic', "/odom")
+        self.declare_parameter('map_topic', "/map")
 
         self.odom_topic = self.get_parameter('odom_topic').get_parameter_value().string_value
         self.map_topic = self.get_parameter('map_topic').get_parameter_value().string_value
@@ -167,15 +167,18 @@ class PathPlan(Node):
         start_point = (self.pose["position"][0], self.pose["position"][1])
         end_point = (goal_pose.position.x, goal_pose.position.y)
 
-        # self.plan_path(
-        #     start_point = start_point,
-        #     end_point = end_point
-        # )
+        self.plan_path(
+            start_point = start_point,
+            end_point = end_point
+        )
 
-        # self.get_logger().info("Path Generated!")
-        # self.trajectory.publish_viz()
+        self.get_logger().info("Path Generated!")
+        self.trajectory.publish_viz()
+        self.get_logger().info("Path Visualized!")
+        self.traj_pub.publish(self.trajectory.toPoseArray())
+        self.get_logger().info("Path Published!")
 
-        self.step_size_trial(start_point, end_point)
+        # self.step_size_trial(start_point, end_point)
         pass
 
     def step_size_trial(self, start_point, end_point):

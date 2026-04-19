@@ -30,10 +30,9 @@ class PRM():
         self.max_attempts = 100000
 
         rm, rmtree = self.generate_prm_star(n, 5.0)
-
-        with open('roadmap_big.pkl', 'wb') as f:
+        with open('src/path_planning/path_planning_prm/roadmap.pkl', 'wb') as f:
             pickle.dump(rm, f)
-        with open('roadmap_KDtree_big.pkl','wb') as f:
+        with open('src/path_planning/path_planning_prm/roadmap_KDtree.pkl','wb') as f:
             pickle.dump(rmtree, f)
 
         print("KDTree saved to roadmap_KDtree.pkl and graph saved to roadmap.pkl")

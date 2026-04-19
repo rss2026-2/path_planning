@@ -35,11 +35,11 @@ setup(
         'console_scripts': [
             'trajectory_builder = path_planning.trajectory_builder:main',
             'trajectory_loader = path_planning.trajectory_loader:main',
-            'trajectory_planner = path_planning.trajectory_planner:main',
             'trajectory_follower = path_planning.trajectory_follower:main',
             'prm_viz = path_planning.PRM_visualizer:main',
             'analyze_prm = path_planning.analyze_prm:main',
             'grid_search_planner = path_planning.grid_search_planner:main',
+            'sampling_planner = path_planning.sampling_planner:main'
 
         ],
     },
