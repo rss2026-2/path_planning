@@ -39,8 +39,8 @@ setup(
             'prm_viz = path_planning.PRM_visualizer:main',
             'analyze_prm = path_planning.analyze_prm:main',
             'grid_search_planner = path_planning.grid_search_planner:main',
-            'sampling_planner = path_planning.sampling_planner:main'
-
+            'sampling_planner = path_planning.sampling_planner:main',
+            'path_analyzer = path_planning.analyze_plans:main'
         ],
     },
 )

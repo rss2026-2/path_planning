@@ -36,6 +36,7 @@ class PathPlan(Node):
         self.declare_parameter('viz_namespace', "/planned_trajectory")
         self.declare_parameter("viz_traj_color", [1.0,1.0,1.0,1.0])
         self.declare_parameter('publish_path', True)
+        self.declare_parameter("path_topic", "/trajectory/current")
 
 
         self.odom_topic = self.get_parameter('odom_topic').get_parameter_value().string_value
@@ -45,6 +46,7 @@ class PathPlan(Node):
         self.viz_namespace = self.get_parameter("viz_namespace").get_parameter_value().string_value
         self.viz_traj_color = self.get_parameter("viz_traj_color").get_parameter_value().double_array_value
         self.publish_path = self.get_parameter('publish_path').get_parameter_value().bool_value
+        self.path_topic = self.get_parameter("path_topic").get_parameter_value().string_value
     
 
         self.map_sub = self.create_subscription(OccupancyGrid, self.map_topic, self.map_cb, 1)
@@ -52,7 +54,7 @@ class PathPlan(Node):
         self.pose_sub = self.create_subscription(Odometry, self.odom_topic, self.pose_cb, 10)
 
         if self.publish_path:
-            self.traj_pub = self.create_publisher(PoseArray, "/trajectory/current", 10)
+            self.traj_pub = self.create_publisher(PoseArray, self.path_topic, 10)
 
 
         self.search_pub = self.create_publisher(MarkerArray,"/search_alg",10)

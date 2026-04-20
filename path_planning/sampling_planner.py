@@ -25,6 +25,7 @@ class PathPlan(Node):
         self.declare_parameter('viz_namespace', "/planned_trajectory")
         self.declare_parameter("viz_traj_color", [1.0,1.0,1.0,1.0])
         self.declare_parameter('publish_path', True)
+        self.declare_parameter("path_topic", "/trajectory/current")
 
         self.rover_radius = self.get_parameter('rover_radius').get_parameter_value().double_value
         self.odom_topic = self.get_parameter('odom_topic').get_parameter_value().string_value
@@ -35,6 +36,7 @@ class PathPlan(Node):
         self.viz_namespace = self.get_parameter('viz_namespace').get_parameter_value().string_value
         self.viz_traj_color = self.get_parameter("viz_traj_color").get_parameter_value().double_array_value
         self.publish_path = self.get_parameter('publish_path').get_parameter_value().bool_value
+        self.path_topic = self.get_parameter("path_topic").get_parameter_value().string_value
 
         self.start_point = None
         self.end_point = None
@@ -60,7 +62,7 @@ class PathPlan(Node):
         self.pose_sub = self.create_subscription(PoseWithCovarianceStamped, self.odom_topic, self.pose_cb, 10)
         
         if self.publish_path:
-            self.traj_pub = self.create_publisher(PoseArray, "/trajectory/current", 10)
+            self.traj_pub = self.create_publisher(PoseArray, self.path_topic, 10)
         
         self.map_pub = self.create_publisher(OccupancyGrid, "/inflated_map", 10)
         # use this publisher for when visualizing several planners in one go
