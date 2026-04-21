@@ -59,8 +59,12 @@ class PathPlan(Node):
 
         self.map_sub = self.create_subscription(OccupancyGrid, self.map_topic, self.map_cb, 1)
         self.goal_sub = self.create_subscription(PoseStamped, "/goal_pose", self.goal_cb, 10)
-        self.pose_sub = self.create_subscription(PoseWithCovarianceStamped, self.odom_topic, self.pose_cb, 10)
-        
+
+        if self.odom_topic == "/odom":
+            self.pose_sub = self.create_subscription(Odometry, self.odom_topic, self.pose_cb, 10)
+        elif self.odom_topic == "/initialpose":
+            self.pose_sub = self.create_subscription(PoseWithCovarianceStamped, self.odom_topic, self.pose_cb, 10)
+         
         if self.publish_path:
             self.traj_pub = self.create_publisher(PoseArray, self.path_topic, 10)
         
@@ -278,7 +282,8 @@ class PathPlan(Node):
             None
         """
         self.start_point = (msg.pose.pose.position.x, msg.pose.pose.position.y)
-        self.get_logger().info(f"start point set: {self.start_point}")
+        if self.odom_topic == "/initialpose":
+            self.get_logger().info(f"start point set: {self.start_point}")
 
     def goal_cb(self, msg):
         """
