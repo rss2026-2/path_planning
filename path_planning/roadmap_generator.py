@@ -38,7 +38,7 @@ class RoadmapGenerator(Node):
         self.rm_path = f'src/path_planning/path_planning_prm/roadmap.pkl'
         self.rmtree_path = f'src/path_planning/path_planning_prm/roadmap_KDtree.pkl'
 
-        self.get_logger().info("=== Roadmap generator ready. Waiting for map to publish... === ")
+        self.get_logger().info("=== Waiting for map to publish... ===")
         self.get_logger().warn("The following files will be overwritten when the map is received:"+
                                f"\n{self.map_path}\n{self.rm_path}\n{self.rmtree_path}")
 
