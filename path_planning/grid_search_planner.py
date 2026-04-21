@@ -30,6 +30,7 @@ class PathPlan(Node):
         self.declare_parameter('odom_topic', "/odom")
         self.declare_parameter('map_topic', "/map")
         self.declare_parameter('safety_cell_radius', 5)
+        self.declare_parameter('max_step_size', 5)
         
 
         #seperate trajectory publishers for path comparison
@@ -42,6 +43,7 @@ class PathPlan(Node):
         self.odom_topic = self.get_parameter('odom_topic').get_parameter_value().string_value
         self.map_topic = self.get_parameter('map_topic').get_parameter_value().string_value
         self.safety_cell_radius = self.get_parameter('safety_cell_radius').get_parameter_value().integer_value
+        self.max_step_size = self.get_parameter('max_step_size').get_parameter_value().integer_value
 
         self.viz_namespace = self.get_parameter("viz_namespace").get_parameter_value().string_value
         self.viz_traj_color = self.get_parameter("viz_traj_color").get_parameter_value().double_array_value
@@ -150,10 +152,16 @@ class PathPlan(Node):
         start_point = (self.pose["position"][0], self.pose["position"][1])
         end_point = (goal_pose.position.x, goal_pose.position.y)
 
-        self.plan_path(
+        path_found = self.plan_path(
             start_point = start_point,
-            end_point = end_point
+            end_point = end_point,
+            visualize = False
         )
+
+        if not path_found:
+            self.get_logger().info("No path found to end point")
+            return
+
 
         self.get_logger().info("Path Generated!")
 
@@ -213,17 +221,25 @@ class PathPlan(Node):
         pass
 
 
-    def plan_path(self, start_point, end_point, max_step_size = 5, visualize = False):
+    def plan_path(self, start_point, end_point, max_step_size = None, visualize = False):
         cells = self.real_to_grid_frame(np.array([start_point, end_point]))
    
         start_cell, end_cell = tuple(cells[0]), tuple(cells[1])
         
+        if max_step_size is None:
+            max_step_size = self.max_step_size
+
         grid_path = self.occupancy_priority_q(start_cell, end_cell, max_step_size, visualize)
+
+        if grid_path is None:
+            return False
+        
         grid_shortened_path = self.shorten_cell_path(grid_path)
         real_path = self.grid_to_real_frame(grid_shortened_path)
 
         self.trajectory.clear()
         self.trajectory.addPoints(real_path)
+        return True
     
     def occupancy_priority_q(self, start_cell, end_cell, max_step_size, visualize):
         

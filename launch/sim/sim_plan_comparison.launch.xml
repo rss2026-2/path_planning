@@ -4,6 +4,7 @@
         <param name="odom_topic" value="/odom"/>
         <param name="map_topic" value="/map"/>
         <param name="safety_cell_radius" value="10"/>
+        <param name="max_step_size" value = "10"/>
         <param name="publish_path" value="True"/>
         <param name="path_topic" value="/trajectory/grid_search_trajectory"/>
         <param name="viz_namespace" value="/grid_search_trajectory"/>
@@ -23,7 +24,7 @@
         <param name="path_topic" value="/trajectory/sampling_trajectory"/>
         <param name="viz_namespace" value="/sampling_trajectory"/>
         <!--color value is an array [r,g,b,alpha] in range [0.0,1.0]-->
-        <param name="viz_traj_color" value="[0.0,0.0,1.0,0.6]"/>
+        <param name="viz_traj_color" value="[0.0,1.0,0.0,0.6]"/>
 
     </node>
 
