@@ -1,4 +1,3 @@
 *.pyc
 .idea/
 __pycache__/
-path_planning_prm/
