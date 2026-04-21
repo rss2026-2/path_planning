@@ -26,7 +26,7 @@ class PathPlan(Node):
     """
 
     def __init__(self):
-        super().__init__("trajectory_planner")
+        super().__init__("grid_search_planner")
         self.declare_parameter('odom_topic', "/odom")
         self.declare_parameter('map_topic', "/map")
         self.declare_parameter('safety_cell_radius', 5)

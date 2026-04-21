@@ -16,10 +16,6 @@
     <node pkg="path_planning" exec="sampling_planner" name="sampling_planner" output="screen">
         
         <param name="odom_topic" value="/odom"/>
-        <param name="map_topic" value="/map"/>
-        <param name="rover_radius" value="0.2"/>
-        <param name="offline" value="False"/>
-        <param name="num_nodes" value="250"/>
         <param name="publish_path" value="True"/>
         <param name="path_topic" value="/trajectory/sampling_trajectory"/>
         <param name="viz_namespace" value="/sampling_trajectory"/>

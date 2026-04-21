@@ -14,12 +14,10 @@ from scipy.spatial.transform import Rotation as R
 class PathPlan(Node):
 
     def __init__(self):
-        super().__init__("trajectory_planner")
+        super().__init__("sampling_planner")
+
+        # -- Declared parameters --
         self.declare_parameter('odom_topic', "/initialpose")
-        self.declare_parameter('map_topic', "/map")
-        self.declare_parameter('rover_radius', 0.2)
-        self.declare_parameter('offline', True)
-        self.declare_parameter('num_nodes', 250)
 
         #seperate trajectory publishers for path comparison
         self.declare_parameter('viz_namespace', "/planned_trajectory")
@@ -27,137 +25,57 @@ class PathPlan(Node):
         self.declare_parameter('publish_path', True)
         self.declare_parameter("path_topic", "/trajectory/current")
 
-        self.rover_radius = self.get_parameter('rover_radius').get_parameter_value().double_value
         self.odom_topic = self.get_parameter('odom_topic').get_parameter_value().string_value
-        self.map_topic = self.get_parameter('map_topic').get_parameter_value().string_value
-        self.offline = self.get_parameter('offline').get_parameter_value().bool_value
-        self.num_nodes = self.get_parameter('num_nodes').get_parameter_value().integer_value
-
-        self.viz_namespace = self.get_parameter('viz_namespace').get_parameter_value().string_value
+        self.viz_namespace = self.get_parameter("viz_namespace").get_parameter_value().string_value
         self.viz_traj_color = self.get_parameter("viz_traj_color").get_parameter_value().double_array_value
         self.publish_path = self.get_parameter('publish_path').get_parameter_value().bool_value
         self.path_topic = self.get_parameter("path_topic").get_parameter_value().string_value
+
 
         self.start_point = None
         self.end_point = None
         self.occupancy_map = None
 
-        self.PRM_map = nx.Graph()
-        self.tree = None
-        
-        self.tree_file = "src/path_planning/path_planning_prm/roadmap_KDtree.pkl"
-        self.prm_map_file = "src/path_planning/path_planning_prm/roadmap.pkl"
-        if not self.offline:
-            self.get_logger().info("Attempting to load saved roadmap")
-            with open(self.tree_file, 'rb') as f:
-                self.tree = pickle.load(f)
-
-            with open(self.prm_map_file, 'rb') as f:
-                self.PRM_map = pickle.load(f)
-            
-            self.get_logger().info("Successfully loaded saved roadmap")
-
-        self.map_sub = self.create_subscription(OccupancyGrid, self.map_topic, self.map_cb, 1)
-        self.goal_sub = self.create_subscription(PoseStamped, "/goal_pose", self.goal_cb, 10)
-
+        # -- Publishers and subscribers --
+        # Pose estimate subscriber
         if self.odom_topic == "/odom":
             self.pose_sub = self.create_subscription(Odometry, self.odom_topic, self.pose_cb, 10)
         elif self.odom_topic == "/initialpose":
             self.pose_sub = self.create_subscription(PoseWithCovarianceStamped, self.odom_topic, self.pose_cb, 10)
          
+         # Current trajectory publisher
         if self.publish_path:
             self.traj_pub = self.create_publisher(PoseArray, self.path_topic, 10)
         
-        self.map_pub = self.create_publisher(OccupancyGrid, "/inflated_map", 10)
-        # use this publisher for when visualizing several planners in one go
-        # latch_qos = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
-        # self.traj_pub = self.create_publisher(PoseArray, "/trajectory/current", latch_qos)
-
-        self.trajectory = LineTrajectory(node=self, viz_namespace=self.viz_namespace)
+        # Goal pose subscriber
+        self.goal_sub = self.create_subscription(PoseStamped, "/goal_pose", self.goal_cb, 10)
         
-        self.get_logger().info("Awaiting Map")
-        if self.offline:
-            self.get_logger().warning(f"Once map is received, the following roadmaps will be overwritten:\n- {self.tree_file}\n- {self.prm_map_file}")
+        # Directories
+        map_path = f'src/path_planning/path_planning_prm/inflated_map.pkl'
+        rm_path = f'src/path_planning/path_planning_prm/roadmap.pkl'
+        rmtree_path = f'src/path_planning/path_planning_prm/roadmap_KDtree.pkl'
 
-    def map_cb(self, msg):
-        """
-        The callback for the offline PRM planner. Takes in information from the map ones
-        and generates a graph of nodes in the map. Nodes are connected with edges if there is a linear
-        ray between them that does not pass through an obstacle.
+        # Load map package
+        with open(map_path, 'rb') as f:
+            map_package = pickle.load(f)
+            self.occupancy_map = map_package['occupancy_map']
+            self.resolution = map_package['resolution']
+            self.origin_x = map_package['origin_x']
+            self.origin_y = map_package['origin_y']
+            self.map_yaw = map_package['map_yaw']
+        
+        # Load roadmap
+        with open(rm_path, 'rb') as f:
+            self.PRM_map = pickle.load(f)
 
-        Args:
-            msg (OccupancyGrid) : ROS2 message that represents the map
+        # Load roadmap tree
+        with open(rmtree_path, 'rb') as f:
+            self.tree = pickle.load(f)
 
-        Returns:
-            None
-        """
-        self.resolution = msg.info.resolution
-        self.origin_x = msg.info.origin.position.x
-        self.origin_y = msg.info.origin.position.y
-
-        quat = [msg.info.origin.orientation.x, msg.info.origin.orientation.y,
-                msg.info.origin.orientation.z, msg.info.origin.orientation.w]
-        self.map_yaw = R.from_quat(quat).as_euler('xyz')[2]
-        pixel_radius = int(self.rover_radius / self.resolution)
-
-        height,width = msg.info.height, msg.info.width
-        map_data = np.array(msg.data, np.double)
-        reshaped_map = map_data.reshape((height, width), order='C')
-        binary_map = (reshaped_map < 50).astype(np.uint8)
-
-        kernel = np.ones((3,3), np.uint8)
-        binary_map = cv2.erode(binary_map, kernel)
-
-        dist_map = cv2.distanceTransform(binary_map, cv2.DIST_L2, 5)
-        safe_map = (dist_map > pixel_radius).astype(np.int8)
-        safe_map[reshaped_map == -1] = 0 #Set unknown to occupied
-
-        self.occupancy_map = safe_map
-        self.visualize_map(msg)
-
-        if self.offline:
-            self.get_logger().info("Map received. Generating PRM...")
-            self.get_logger().info(f"{self.resolution}")
-            self.get_logger().info(f"{height}")
-            self.get_logger().info(f"{width}")
-            self.get_logger().info(f"{self.origin_x}")
-            self.get_logger().info(f"""{msg.info.origin.orientation.x, msg.info.origin.orientation.y,
-                    msg.info.origin.orientation.z, msg.info.origin.orientation.w}""")
-            prm_generator = PRM(self.occupancy_map, msg, self.num_nodes)
-            self.PRM_map = prm_generator.roadmap
-            self.tree = prm_generator.tree
-
-        self.get_logger().info("PRM ready for planning.")
-
-    def visualize_map(self,msg):
-        """
-        Visualizes the inflated map on the /inflated_map topic.
-
-        Args:
-            msg (ROS2 OccupancyGrid): the original map message
-
-        Returns:
-            None
-        """
-        viz_msg = OccupancyGrid()
-        viz_msg.header = msg.header
-        viz_msg.info = msg.info
-
-        original = np.array(msg.data, dtype=np.int8).reshape(
-            (msg.info.height, msg.info.width)
-        )
-
-        viz = original.copy()
-
-        viz[self.occupancy_map == 0] = 100
-
-        inflated_only = (original == 0) & (self.occupancy_map == 0)
-        viz[inflated_only] = 50  
-
-        viz_msg.data = viz.astype(np.int8).flatten().tolist()
-
-        self.map_pub.publish(viz_msg)
-        self.get_logger().info("Published map for visualization")
+        # -- Initialized variables --
+        self.start_point = None
+        self.end_point = None
+        self.trajectory = LineTrajectory(node=self, viz_namespace="/planned_trajectory")
 
     def link_node_to_graph(self, point, node_id, radius=5.0):
         """
