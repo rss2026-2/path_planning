@@ -34,7 +34,14 @@ class RoadmapGenerator(Node):
         # -- Initialized variables -- 
         self.occupancy_map = None
 
+        # -- Initialize directories --
+        self.map_path = f'src/path_planning/path_planning_prm/inflated_map.pkl'
+        self.rm_path = f'src/path_planning/path_planning_prm/roadmap.pkl'
+        self.rmtree_path = f'src/path_planning/path_planning_prm/roadmap_KDtree.pkl'
+
         self.get_logger().info("=== Roadmap generator ready. Waiting for map to publish... === ")
+        self.get_logger().warn("The following roadmpap files will be overwritten when the map is received. To save them, either move them to a different directory or rename them."+
+                               f"\n{self.map_path}\n{self.rm_path}\n{self.rmtree_path}")
 
     def map_cb(self, msg):
         """
@@ -89,24 +96,19 @@ class RoadmapGenerator(Node):
         prm_generator = PRM(safe_map, msg, self.num_nodes, self.prm_label)
         rm, rmtree = prm_generator.generate_prm_star(self.num_nodes, self.connection_radius)
 
-        # Initialize directories
-        map_path = f'src/path_planning/path_planning_prm/inflated_map.pkl'
-        rm_path = f'src/path_planning/path_planning_prm/roadmap.pkl'
-        rmtree_path = f'src/path_planning/path_planning_prm/roadmap_KDtree.pkl'
-
         # Save the package to disk
-        with open(map_path, 'wb') as f:
+        with open(self.map_path, 'wb') as f:
             pickle.dump(map_data, f)
         
         # Save the roadmap to the disk
-        with open(rm_path, 'wb') as f:
+        with open(self.rm_path, 'wb') as f:
             pickle.dump(rm, f)
 
         # Save the roadmap tree to the disk
-        with open(rmtree_path, 'wb') as f:
+        with open(self.rmtree_path, 'wb') as f:
             pickle.dump(rmtree, f)
 
-        self.get_logger().info(f"Map saved to {map_path}.\n KDTree saved to {rmtree_path}.\n Graph saved to {rm_path}")
+        self.get_logger().info(f"Map saved to {self.map_path}.\n KDTree saved to {self.rmtree_path}.\n Graph saved to {self.rm_path}")
 
     def publish_map(self, msg):
         """
