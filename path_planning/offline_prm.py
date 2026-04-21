@@ -6,7 +6,7 @@ from scipy.spatial import KDTree
 from scipy.spatial.transform import Rotation as R
 
 class PRM():
-    def __init__(self, occupancy_map, msg, n):
+    def __init__(self, occupancy_map, msg, n, prm_label=""):
         print("INITIALIZED OFFLINE PRM NODE")
 
         self.roadmap = nx.Graph()
@@ -28,15 +28,6 @@ class PRM():
         ]
         self.map_yaw = R.from_quat(quat).as_euler('xyz')[2]
         self.max_attempts = 100000
-
-        rm, rmtree = self.generate_prm_star(n, 5.0)
-
-        with open('roadmap_big.pkl', 'wb') as f:
-            pickle.dump(rm, f)
-        with open('roadmap_KDtree_big.pkl','wb') as f:
-            pickle.dump(rmtree, f)
-
-        print("KDTree saved to roadmap_KDtree.pkl and graph saved to roadmap.pkl")
 
     def world_to_grid(self, point):
         """

@@ -11,7 +11,7 @@ class RoadmapVisualizer(Node):
     def __init__(self):
         super().__init__('roadmap_viz')
         self.publisher = self.create_publisher(Marker, '/roadmap_nodes', 10)
-        with open("src/path_planning/path_planning_prm/roadmap_bigger.pkl", 'rb') as f:
+        with open("src/path_planning/path_planning_prm/roadmap_0.30rad.pkl", 'rb') as f:
             roadmap = pickle.load(f)
         print(f"Successfully loaded roadmap with {roadmap.number_of_nodes()} nodes.")
         self.roadmap = roadmap

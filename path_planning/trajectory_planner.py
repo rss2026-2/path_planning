@@ -15,118 +15,56 @@ class PathPlan(Node):
 
     def __init__(self):
         super().__init__("trajectory_planner")
-        self.declare_parameter('odom_topic', "/initialpose")
-        self.declare_parameter('map_topic', "/map")
-        self.declare_parameter('rover_radius', 0.6)
-        self.declare_parameter('offline', False)
-        self.declare_parameter('num_nodes', 250)
 
-        self.rover_radius = self.get_parameter('rover_radius').value
+        # -- Declared parameters --
+        self.declare_parameter('odom_topic', "/initialpose")
+        self.declare_parameter('map_topic', "/inflated_map")
+        self.declare_parameter('prm_label', "0.30rad")
+        
         self.odom_topic = self.get_parameter('odom_topic').get_parameter_value().string_value
         self.map_topic = self.get_parameter('map_topic').get_parameter_value().string_value
-        self.offline = self.get_parameter('offline').value
-        self.num_nodes = self.get_parameter('num_nodes').value
-        self.offline = True
-        self.start_point = None
-        self.end_point = None
-        self.occupancy_map = None
+        prm_label = self.get_parameter('prm_label').get_parameter_value().string_value
 
-        self.PRM_map = nx.Graph()
-        self.tree = None
-
-        # with open("/root/racecar_ws/path_planning_prm/roadmap_KDtree_big.pkl", 'rb') as f:
-        #     self.tree = pickle.load(f)
-
-        # with open("/root/racecar_ws/path_planning_prm/roadmap_big.pkl", 'rb') as f:
-        #     self.PRM_map = pickle.load(f)
-
-        self.map_sub = self.create_subscription(OccupancyGrid, self.map_topic, self.map_cb, 1)
-        self.goal_sub = self.create_subscription(PoseStamped, "/goal_pose", self.goal_cb, 10)
+        # -- Publishers and subscribers --
+        # Pose estimate subscriber
         self.pose_sub = self.create_subscription(PoseWithCovarianceStamped, self.odom_topic, self.pose_cb, 10)
+        # Goal pose subscriber
+        self.goal_sub = self.create_subscription(PoseStamped, "/goal_pose", self.goal_cb, 10)
+        
+        # Current trajectory publisher
         self.traj_pub = self.create_publisher(PoseArray, "/trajectory/current", 10)
+        # Inflated map publisher
         self.map_pub = self.create_publisher(OccupancyGrid, "/inflated_map", 10)
         # use this publisher for when visualizing several planners in one go
         # latch_qos = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
         # self.traj_pub = self.create_publisher(PoseArray, "/trajectory/current", latch_qos)
+        
+        # Directories
+        map_path = f'src/path_planning/path_planning_prm/inflated_map_{prm_label}.pkl'
+        rm_path = f'src/path_planning/path_planning_prm/roadmap_{prm_label}.pkl'
+        rmtree_path = f'src/path_planning/path_planning_prm/roadmap_KDtree_{prm_label}.pkl'
 
+        # Load map package
+        with open(map_path, 'rb') as f:
+            map_package = pickle.load(f)
+            self.occupancy_map = map_package['occupancy_map']
+            self.resolution = map_package['resolution']
+            self.origin_x = map_package['origin_x']
+            self.origin_y = map_package['origin_y']
+            self.map_yaw = map_package['map_yaw']
+        
+        # Load roadmap
+        with open(rm_path, 'rb') as f:
+            self.PRM_map = pickle.load(f)
+
+        # Load roadmap tree
+        with open(rmtree_path, 'rb') as f:
+            self.tree = pickle.load(f)
+
+        # -- Initialized variables --
+        self.start_point = None
+        self.end_point = None
         self.trajectory = LineTrajectory(node=self, viz_namespace="/planned_trajectory")
-
-    def map_cb(self, msg):
-        """
-        The callback for the offline PRM planner. Takes in information from the map ones
-        and generates a graph of nodes in the map. Nodes are connected with edges if there is a linear
-        ray between them that does not pass through an obstacle.
-
-        Args:
-            msg (OccupancyGrid) : ROS2 message that represents the map
-
-        Returns:
-            None
-        """
-        self.resolution = msg.info.resolution
-        self.origin_x = msg.info.origin.position.x
-        self.origin_y = msg.info.origin.position.y
-
-        quat = [msg.info.origin.orientation.x, msg.info.origin.orientation.y,
-                msg.info.origin.orientation.z, msg.info.origin.orientation.w]
-        self.map_yaw = R.from_quat(quat).as_euler('xyz')[2]
-        pixel_radius = int(self.rover_radius / self.resolution)
-
-        height,width = msg.info.height, msg.info.width
-        map_data = np.array(msg.data, np.double)
-        binary_map = (map_data < 50).astype(np.uint8).reshape((height, width), order='C')  # reshape FIRST
-
-        kernel = np.ones((3,3), np.uint8)
-        binary_map = cv2.erode(binary_map, kernel)
-
-        dist_map = cv2.distanceTransform(binary_map, cv2.DIST_L2, 5)
-        safe_map = (dist_map > pixel_radius).astype(np.int8)
-
-        self.occupancy_map = safe_map
-        self.visualize_map(msg)
-
-        if self.offline:
-            self.get_logger().info("Map received. Generating PRM...")
-            self.get_logger().info(f"{self.resolution}")
-            self.get_logger().info(f"{height}")
-            self.get_logger().info(f"{width}")
-            self.get_logger().info(f"{self.origin_x}")
-            self.get_logger().info(f"""{msg.info.origin.orientation.x, msg.info.origin.orientation.y,
-                    msg.info.origin.orientation.z, msg.info.origin.orientation.w}""")
-            prm_generator = PRM(self.occupancy_map, msg, self.num_nodes)
-            self.PRM_map = prm_generator.roadmap
-            self.tree = prm_generator.tree
-            self.get_logger().info("PRM ready for planning.")
-
-    def visualize_map(self,msg):
-        """
-        Visualizes the inflated map on the /inflated_map topic.
-
-        Args:
-            msg (ROS2 OccupancyGrid): the original map message
-
-        Returns:
-            None
-        """
-        viz_msg = OccupancyGrid()
-        viz_msg.header = msg.header
-        viz_msg.info = msg.info
-
-        original = np.array(msg.data, dtype=np.int16).reshape(
-            (msg.info.height, msg.info.width)
-        )
-
-        viz = original.copy()
-
-        viz[self.occupancy_map == 0] = 100
-
-        inflated_only = (original == 0) & (self.occupancy_map == 0)
-        viz[inflated_only] = 50  
-
-        viz_msg.data = viz.astype(np.int8).flatten().tolist()
-
-        self.map_pub.publish(viz_msg)
-        self.get_logger().info("Published map for visualization")
 
     def link_node_to_graph(self, point, node_id, radius=5.0):
         """
