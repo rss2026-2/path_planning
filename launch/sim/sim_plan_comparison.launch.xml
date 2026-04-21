@@ -3,7 +3,7 @@
         
         <param name="odom_topic" value="/odom"/>
         <param name="map_topic" value="/map"/>
-        <param name="safety_cell_radius" value="5"/>
+        <param name="safety_cell_radius" value="10"/>
         <param name="publish_path" value="True"/>
         <param name="path_topic" value="/trajectory/grid_search_trajectory"/>
         <param name="viz_namespace" value="/grid_search_trajectory"/>
