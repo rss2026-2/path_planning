@@ -1,0 +1,14 @@
+<launch>
+    <node pkg="path_planning" exec="roadmap_generator" name="roadmap_generator" output="screen">
+        
+        <!-- map topic where map will be published -->
+        <param name="map_topic" value="/map"/>
+        <!-- rover radius in meters -->
+        <param name="rover_radius" value="0.30"/>
+        <!-- number of nodes in roadmap -->
+        <param name="num_nodes" value = "250"/>
+        <!-- I don't even know, ngl -->
+        <param name="connection_radius" value="5.0"/>
+
+    </node>
+</launch>

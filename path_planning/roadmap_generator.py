@@ -23,9 +23,8 @@ class RoadmapGenerator(Node):
         
         # PRM parameters
         self.rover_radius = self.get_parameter('rover_radius').get_parameter_value().double_value
-        self.connection_radius = self.get_parameter('connection_radius').get_parameter_value().double_value
         self.num_nodes = self.get_parameter('num_nodes').get_parameter_value().integer_value
-    
+        self.connection_radius = self.get_parameter('connection_radius').get_parameter_value().double_value
 
         # -- Publishers and subscribers -- 
         self.map_sub = self.create_subscription(OccupancyGrid, self.map_topic, self.map_cb, 1)
@@ -40,7 +39,7 @@ class RoadmapGenerator(Node):
         self.rmtree_path = f'src/path_planning/path_planning_prm/roadmap_KDtree.pkl'
 
         self.get_logger().info("=== Roadmap generator ready. Waiting for map to publish... === ")
-        self.get_logger().warn("The following roadmpap files will be overwritten when the map is received. To save them, either move them to a different directory or rename them."+
+        self.get_logger().warn("The following files will be overwritten when the map is received:"+
                                f"\n{self.map_path}\n{self.rm_path}\n{self.rmtree_path}")
 
     def map_cb(self, msg):
@@ -66,10 +65,6 @@ class RoadmapGenerator(Node):
 
         # Log that we're starting the graph generation
         self.get_logger().info("Map received. Generating PRM...")
-        self.get_logger().info(f"""resolution: {resolution}; 
-        height: {height}; width: {width}; origin: ({origin_x}, {origin_y}), 
-        orientation: ({msg.info.origin.orientation.x, msg.info.origin.orientation.y, msg.info.origin.orientation.z, msg.info.origin.orientation.w})""")
-        
         # Get the pixel radius from the connection radius and resolution
         pixel_radius = int(self.rover_radius / resolution)
 
@@ -93,7 +88,7 @@ class RoadmapGenerator(Node):
             'map_yaw': map_yaw
         }
 
-        prm_generator = PRM(safe_map, msg, self.num_nodes, self.prm_label)
+        prm_generator = PRM(safe_map, msg)
         rm, rmtree = prm_generator.generate_prm_star(self.num_nodes, self.connection_radius)
 
         # Save the package to disk
@@ -108,7 +103,7 @@ class RoadmapGenerator(Node):
         with open(self.rmtree_path, 'wb') as f:
             pickle.dump(rmtree, f)
 
-        self.get_logger().info(f"Map saved to {self.map_path}.\n KDTree saved to {self.rmtree_path}.\n Graph saved to {self.rm_path}")
+        self.get_logger().info(f"Map sucessfully saved!")
 
     def publish_map(self, msg):
         """

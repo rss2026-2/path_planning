@@ -112,6 +112,8 @@ class PathPlan(Node):
             "height": map_msg.info.height
         }
 
+        self.get_logger().info("Ready to start planning!")
+
     def map_occupancy_expansion(self, grid, radius, prob_thresh = 0.3):
         # find boundaries of map
         threshold = np.zeros(shape = grid.shape, dtype = np.uint8)

@@ -7,8 +7,6 @@ from scipy.spatial.transform import Rotation as R
 
 class PRM():
     def __init__(self, occupancy_map, msg):
-        print("INITIALIZED OFFLINE PRM NODE")
-
         self.roadmap = nx.Graph()
         self.occupancy_map = occupancy_map
 

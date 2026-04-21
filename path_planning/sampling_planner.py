@@ -55,6 +55,8 @@ class PathPlan(Node):
         rm_path = f'src/path_planning/path_planning_prm/roadmap.pkl'
         rmtree_path = f'src/path_planning/path_planning_prm/roadmap_KDtree.pkl'
 
+        self.get_logger().info("Attempting to load saved roadmap files...")
+
         # Load map package
         with open(map_path, 'rb') as f:
             map_package = pickle.load(f)
@@ -72,10 +74,13 @@ class PathPlan(Node):
         with open(rmtree_path, 'rb') as f:
             self.tree = pickle.load(f)
 
+        self.get_logger().info("Successfully loaded saved files!")
         # -- Initialized variables --
         self.start_point = None
         self.end_point = None
-        self.trajectory = LineTrajectory(node=self, viz_namespace="/planned_trajectory")
+        self.trajectory = LineTrajectory(node=self, viz_namespace = self.viz_namespace)
+
+        self.get_logger().info("Ready to start planning!")
 
     def link_node_to_graph(self, point, node_id, radius=5.0):
         """
