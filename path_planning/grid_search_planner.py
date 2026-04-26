@@ -61,9 +61,9 @@ class PathPlan(Node):
 
         self.search_pub = self.create_publisher(MarkerArray,"/search_alg",10)
 
-
         self.trajectory = LineTrajectory(node=self, viz_namespace=self.viz_namespace)
         self.map = None
+        self.dist_map = None
         self.pose = None
         
         #reset trials
@@ -102,6 +102,9 @@ class PathPlan(Node):
         occupancy_grid = np.array(map_msg.data).reshape(map_msg.info.height, map_msg.info.width)
 
         self.map_occupancy_expansion(occupancy_grid, self.safety_cell_radius)
+   
+        binary_map = (occupancy_grid == 0).astype(np.uint8)
+        self.dist_map = np.array(cv2.distanceTransform(binary_map, cv2.DIST_L2, 5))
 
         self.map = {
             "res": map_msg.info.resolution,
@@ -249,7 +252,7 @@ class PathPlan(Node):
         seen = set()
         edges = [] # collect all edges for visualization
 
-        start_item = (math.dist(start_cell,end_cell), 0, (start_cell,)) # (total cost, path_cost, path)
+        start_item = (math.dist(start_cell,end_cell), 0, 0, (start_cell,)) # (total cost, path_cost, clearance_cost,  path)
         heapq.heappush(queue, start_item)
 
         map_w, map_h = self.map["width"], self.map["height"]
@@ -273,7 +276,7 @@ class PathPlan(Node):
             self.clear_points()
 
         while queue:
-            _, curr_path_cost, curr_path = heapq.heappop(queue)
+            _, curr_path_cost, avg_clearance, curr_path = heapq.heappop(queue)
             curr_cell = curr_path[-1]
 
             if curr_cell in seen:
@@ -293,9 +296,11 @@ class PathPlan(Node):
 
             for neighbor in find_valid_neighbors(curr_cell):
                 new_path = curr_path + (neighbor,)
+
                 new_path_cost = curr_path_cost + math.dist(curr_cell, neighbor)
-                new_total_cost = new_path_cost + math.dist(neighbor ,end_cell)
-                heapq.heappush(queue, (new_total_cost, new_path_cost, new_path))
+                new_clearance_cost = avg_clearance + (self.dist_map[neighbor[1],neighbor[0]] - avg_clearance) / len(new_path)
+                new_total_cost = new_path_cost + math.dist(neighbor ,end_cell) - new_clearance_cost
+                heapq.heappush(queue, (new_total_cost, new_path_cost, new_clearance_cost, new_path))
 
     
 
