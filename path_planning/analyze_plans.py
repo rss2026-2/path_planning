@@ -11,6 +11,9 @@ import math
 from path_planning.utils import LineTrajectory
 from scipy.spatial.transform import Rotation as R
 import cv2
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 
 
 class PathAnalyzer(Node):
@@ -39,6 +42,7 @@ class PathAnalyzer(Node):
                 lambda traj_msg, name = traj_name: self.traj_cb(traj_msg, name),
                 10
             )
+        self.trajs_received = 0
 
         self.start_time = None
         self.pose = None
@@ -125,6 +129,8 @@ class PathAnalyzer(Node):
         self.get_logger().info(f"New Goal Received! Minimum Distance = {dist_to_goal}\nWaiting for Trajectories...")
     
     def traj_cb(self, traj_msg, traj_name):
+        self.trajs_received += 1
+
         computation_time = int((time.perf_counter_ns() - self.start_time) / 1e6)
         new_traj = LineTrajectory(self)
         new_traj.fromPoseArray(traj_msg)
@@ -142,6 +148,57 @@ class PathAnalyzer(Node):
                                f"Path Error: {path_dist - self.data['goal_distances'][-1]}\n\t"+
                                f"Min Clearance: {min_clearance}\n\t"+
                                f"Avg Clearance: {avg_clearance}")
+
+        if self.trajs_received == len(self.traj_names):
+            self.trajs_received = 0
+            self.get_logger().info("All trajectories received. Plotting data...")
+            self.plot_efficiency_data()
+            self.plot_safety_data()
+            self.get_logger().info("Data successfully plotted!")
+
+    def plot_efficiency_data(self):
+        fig, axs = plt.subplots(1, 2, layout='constrained', sharex = True, figsize=(15, 5))
+        x = np.array(self.data["goal_distances"], dtype=int)
+
+        for traj_name in self.traj_names:
+            x1, y1 = zip(*sorted(zip(x, self.data[traj_name]["computation_times"])))
+            axs[0].plot(x1, y1, marker="o", label = traj_name)
+
+            x2, y2 = zip(*sorted(zip(x, self.data[traj_name]["path_distances"])))
+            axs[1].plot(x2, y2, marker="o", label = traj_name)
+        
+        axs[0].set_xlabel("Minimum Distance to Goal (m)")
+        axs[1].set_xlabel("Minimum Distance to Goal (m)")
+        plt.xticks(x)
+
+        axs[0].set_ylabel("Computation Time (ms)")
+        axs[1].set_ylabel("Path Cost (m)")
+
+        fig.legend(*axs[0].get_legend_handles_labels(), loc='upper left', bbox_to_anchor=(1.05, 0.9))
+        fig.savefig("src/path_planning/generated_figs/path_planner_efficiency_comparison.png", bbox_inches="tight")
+        plt.close(fig)
+
+    def plot_safety_data(self):
+        fig, axs = plt.subplots(1, 2, layout='constrained', sharex = True, figsize = (15,5))
+        x = np.array(self.data["goal_distances"], dtype=int)
+
+        for traj_name in self.traj_names:
+            x1, y1 = zip(*sorted(zip(x, self.data[traj_name]["avg_clearances"])))
+            axs[0].plot(x1, y1, marker="o", label = traj_name)
+            
+            x2, y2 = zip(*sorted(zip(x, self.data[traj_name]["min_clearances"])))
+            axs[1].plot(x2, y2, marker="o", label = traj_name)
+
+        axs[0].set_xlabel("Minimum Distance to Goal (m)")
+        axs[1].set_xlabel("Minimum Distance to Goal (m)")
+        plt.xticks(x)
+
+        axs[0].set_ylabel("Average Clearance (m)")
+        axs[1].set_ylabel("Minimum Clearance (m)")
+
+        fig.legend(*axs[0].get_legend_handles_labels(), loc='upper left', bbox_to_anchor=(1.05, 0.9))
+        fig.savefig("src/path_planning/generated_figs/path_planner_safety_comparison.png", bbox_inches="tight")
+        plt.close(fig)
 
 def main(args=None):
     rclpy.init(args=args)
