@@ -201,7 +201,7 @@ class LineTrajectory:
         elif self.end_pub.get_subscription_count() == 0:
             self.node.get_logger().info("Not publishing end point, no subscribers")
 
-    def publish_trajectory(self, color, duration=0.0):
+    def publish_trajectory(self, color = [1.0,1.0,1.0], duration=0.0):
         should_publish = len(self.points) > 1
         self.node.get_logger().info("Before publishing trajectory")
         # if self.visualize and self.traj_pub.get_subscription_count() > 0:
@@ -236,7 +236,7 @@ class LineTrajectory:
         elif self.traj_pub.get_subscription_count() == 0:
             self.node.get_logger().info("Not publishing trajectory, no subscribers")
 
-    def publish_viz(self, traj_color, duration=0):
+    def publish_viz(self, traj_color = [1.0,1.0,1.0], duration=0):
         if not self.visualize:
             self.node.get_logger().info("Cannot visualize path, not initialized with visualization enabled")
             return

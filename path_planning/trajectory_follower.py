@@ -72,7 +72,8 @@ class PurePursuit(Node):
         self.trajectory = LineTrajectory(self, "/followed_trajectory")
 
         timer_rate = 25
-        self.create_timer(1/timer_rate, self.timer_callback)        
+        self.create_timer(1/timer_rate, self.timer_callback)
+        self.get_logger().info("Ready to follow!")        
 
     def pose_callback(self, odometry_msg):
         """
