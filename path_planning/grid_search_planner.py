@@ -228,7 +228,7 @@ class PathPlan(Node):
         """
         Given a start and end cell, uses A* search to find a path between these
         locations whilst minimizing path distance and distance from the goal
-        and maximizing average path clearance from obstacles.
+        and maximizing average and minimum path clearance from obstacles.
 
         Args:
             start_point: The starting location in the real map
@@ -245,14 +245,20 @@ class PathPlan(Node):
         seen = set()
         edges = [] # collect all edges for visualization
 
-        start_item = (math.dist(start_cell,end_cell), 0, 0, (start_cell,)) # (total cost, path_cost, clearance_cost,  path)
+        start_item = (
+            math.dist(start_cell,end_cell), #t otal cost
+            0, # path_cost
+            0, # avg clearance
+            float("inf"), # min clearance
+            (start_cell,) # path
+        )
         heapq.heappush(queue, start_item)
         
         if visualize:
             self.clear_points()
 
         while queue:
-            _, curr_path_cost, avg_clearance, curr_path = heapq.heappop(queue)
+            _, curr_path_cost, avg_clearance, min_clearance, curr_path = heapq.heappop(queue)
             curr_cell = curr_path[-1]
 
             if curr_cell in seen:
@@ -278,9 +284,14 @@ class PathPlan(Node):
                 new_path = curr_path + (neighbor,)
 
                 new_path_cost = curr_path_cost + math.dist(curr_cell, neighbor)
-                new_clearance_cost = avg_clearance + (self.dist_map[neighbor[1],neighbor[0]] - avg_clearance) / len(new_path)
-                new_total_cost = new_path_cost + math.dist(neighbor ,end_cell) - new_clearance_cost
-                heapq.heappush(queue, (new_total_cost, new_path_cost, new_clearance_cost, new_path))
+
+                curr_clearance = self.dist_map[neighbor[1],neighbor[0]]
+
+                new_avg_clearance = avg_clearance + (self.dist_map[neighbor[1],neighbor[0]] - avg_clearance) / len(new_path)
+                new_min_clearance = min(min_clearance, curr_clearance)
+                new_total_cost = new_path_cost + math.dist(neighbor ,end_cell) - new_avg_clearance - new_min_clearance
+
+                heapq.heappush(queue, (new_total_cost, new_path_cost, new_avg_clearance, new_min_clearance, new_path))
         
         if found_path is None:
             return False
@@ -291,9 +302,7 @@ class PathPlan(Node):
         self.trajectory.clear()
         self.trajectory.addPoints(real_path)
         return True
-
     
-
     def publish_edges(self, edges):
         """
         Publish all accumulated edges as a single connected marker.
@@ -365,7 +374,8 @@ class PathPlan(Node):
                 new_cell_path.append(prev_cell)
                 curr_heading = new_heading
         
-        new_cell_path.append(cell_path[-1])
+        if new_cell_path[-1] != cell_path[-1]:
+            new_cell_path.append(cell_path[-1])
         return new_cell_path
 
     def grid_to_real_frame(self, cells):
