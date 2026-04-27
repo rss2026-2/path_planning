@@ -65,17 +65,17 @@ class PathPlan(Node):
         self.map = None
         self.dist_map = None
         self.pose = None
-        
-        #reset trials
-        self.trials = []
 
         self.get_logger().info("Awaiting Map")
 
     def map_cb(self, map_msg):
         """
-        Updates the map used for path planning
-        """
+        Receives an occupancy map and formats it to be used in later functions
 
+        Args:
+            map_msg (Occupancy Grid): A map whose data is represented as integers from
+            0-100 representing the probability of being occupied. -1 is unknown.
+        """
         self.get_logger().info("Successfully Received Map Information")
 
         map_transform = np.eye(4)
@@ -93,7 +93,6 @@ class PathPlan(Node):
 
         map_transform[:3, 3] = translation
         map_transform[:3,:3] = rotation.as_matrix()
-
 
         transform_inverse = np.eye(4)
         transform_inverse[:3, :3] = map_transform[:3,:3].T
@@ -118,6 +117,18 @@ class PathPlan(Node):
         self.get_logger().info("Ready to start planning!")
 
     def map_occupancy_expansion(self, grid, radius, prob_thresh = 0.3):
+        """
+        Converts the occupancy grid to a binary map based on a probability threshold,
+        then expands the boundaries by a certain radius.
+        
+        Args:
+            grid (nd array): A numpy 2D array representing the occupancy grid whose
+            values are integers from 0-100 representing the probability of being occupied. 
+            -1 is unknown.
+            radius (int): The number of cells with which to expand boundaries.
+            prob_thresh (float): Used to convert to binary map.
+
+        """
         # find boundaries of map
         threshold = np.zeros(shape = grid.shape, dtype = np.uint8)
         threshold[grid >= int(prob_thresh * 100)] = 255
@@ -134,6 +145,12 @@ class PathPlan(Node):
         grid[threshold > 0] = 1
 
     def pose_cb(self, pose_msg):
+        """
+        Saves the current pose of the racecar in the map.
+
+        Args:
+            pose_msg (Odometry): The pose of the racecar received as a message
+        """
         self.pose = {
             "position": [
                 pose_msg.pose.pose.position.x,
@@ -149,6 +166,14 @@ class PathPlan(Node):
         }
 
     def goal_cb(self, goal_msg):
+        """
+        Given a goal pose, finds a path to that position from the current pose,
+        publishes it as a trajectory, and visualizes in RViz. Returns None if a path
+        is not found.
+
+        Args:
+            goal_msg (PoseStamped): The pose of the goal position
+        """
         if self.map is None:
             self.get_logger().info("Map Information Not Received")
             return
@@ -167,7 +192,6 @@ class PathPlan(Node):
             self.get_logger().info("No path found to end point")
             return
 
-
         self.get_logger().info("Path Generated!")
 
         if self.publish_path:
@@ -176,101 +200,53 @@ class PathPlan(Node):
 
         self.trajectory.publish_viz(traj_color = self.viz_traj_color)
         self.get_logger().info("Path Visualized!")
-
-        # self.step_size_trial(start_point, end_point)
-        pass
-
-    def step_size_trial(self, start_point, end_point):
-        new_trial = {
-            "label": int(math.dist(start_point, end_point) / self.map["res"]),
-            "x" : np.arange(10,21,2),
-            "y1": [],
-            "y2": []
-        }
-
-
-        for step_size in new_trial["x"]:
-            start_time = time.perf_counter_ns()
-            self.plan_path(start_point = start_point, end_point = end_point, max_step_size = step_size, visualize = True)
-            time_elapsed = int((time.perf_counter_ns() - start_time) / 1e6)
-            new_trial["y1"].append(time_elapsed)
-            new_trial["y2"].append(self.trajectory.distance_to_end(0))
-
-            self.trajectory.publish_viz()
-            time.sleep(2)
-        
-        self.trials.append(new_trial)
-
-        fig, axs = plt.subplots(1,2, layout='constrained', )
-        colors = plt.cm.tab20(np.linspace(0, 1, len(self.trials)))
-
-        
-        for i,trial in enumerate(self.trials):
-            axs[0].plot(trial["x"], trial["y1"], marker = "o", color = colors[i], label = trial["label"])
-            axs[1].plot(trial["x"], trial["y2"], marker = "o", color = colors[i], label = trial["label"])
-
-        axs[0].set_xticks(new_trial["x"])
-        axs[0].set_xlabel("Step Size (Cells)")
-        axs[0].set_ylabel("Time (ms)")
-        axs[0].set_title("Planning Time vs Step Size")
-
-        axs[1].set_xticks(new_trial["x"])
-        axs[1].set_xlabel("Step Size (Cells)")
-        axs[1].set_ylabel("Distance (meters)")
-        axs[1].set_title("Path Distance vs Step Size")
-
-        fig.legend(*axs[0].get_legend_handles_labels(),title = "Approx Distance To Goal (Cells)", loc='upper left', bbox_to_anchor=(1.05, 0.9))
-        fig.savefig("src/path_planning/path_planning/generated_figs/step_size_trial.png", bbox_inches="tight")
-        plt.close(fig)
-
-        pass
-
-
-    def plan_path(self, start_point, end_point, max_step_size = None, visualize = False):
-        cells = self.real_to_grid_frame(np.array([start_point, end_point]))
-   
-        start_cell, end_cell = tuple(cells[0]), tuple(cells[1])
-        
-        if max_step_size is None:
-            max_step_size = self.max_step_size
-
-        grid_path = self.occupancy_priority_q(start_cell, end_cell, max_step_size, visualize)
-
-        if grid_path is None:
-            return False
-        
-        # grid_shortened_path = self.shorten_cell_path(grid_path)
-        real_path = self.grid_to_real_frame(grid_path)
-
-        self.trajectory.clear()
-        self.trajectory.addPoints(real_path)
-        return True
     
-    def occupancy_priority_q(self, start_cell, end_cell, max_step_size, visualize):
+    def find_valid_neighbors(self, curr_cell, step_size):
+        """
+        Finds the valid unseen neighbors of the given current cell. The step size is bounded 
+        by the given max_step_size and the distance to the end_cell (prevents overshooting).
+
+        Args:
+            curr_cell (tuple): The (v,u) location of the current cell in the occupancy grid
+            end_cell (tuple): The (v,u) location of the end cell in the occupancy grid
+            seen (set): All the cells that have been visited before
+
+        """
+        map_w, map_h = self.map["width"], self.map["height"]
+        neighbors = []
+        curr_u, curr_v = curr_cell
+
+        for du,dv in [(1,1), (-1,-1), (1,-1), (-1,1), (-1,0), (1,0), (0,-1), (0,1)]:
+            n_cell = (curr_u + (du * step_size), curr_v + (dv*step_size))
+            if 0 <= n_cell[0] < map_w and 0 <= n_cell[1] < map_h: #if the cell is within bounds
+                if self.map["array"][n_cell[1]][n_cell[0]] == 0:
+                    neighbors.append(n_cell)
         
+        return neighbors
+    
+    def plan_path(self, start_point, end_point, visualize = False):
+        """
+        Given a start and end cell, uses A* search to find a path between these
+        locations whilst minimizing path distance and distance from the goal
+        and maximizing average path clearance from obstacles.
+
+        Args:
+            start_point: The starting location in the real map
+            end_cell: The end location in the real map
+            visualize: Whether to visualize the A* algorithm as it runs (makes it much
+            slower but is useful for debugging)
+
+        """
+        cells = self.real_to_grid_frame(np.array([start_point, end_point]))
+        start_cell, end_cell = tuple(cells[0]), tuple(cells[1])
+        found_path = None
+
         queue = [] # le heap
         seen = set()
         edges = [] # collect all edges for visualization
 
         start_item = (math.dist(start_cell,end_cell), 0, 0, (start_cell,)) # (total cost, path_cost, clearance_cost,  path)
         heapq.heappush(queue, start_item)
-
-        map_w, map_h = self.map["width"], self.map["height"]
-        def find_valid_neighbors(cell):
-            neighbors = []
-            curr_u, curr_v = cell
-
-            dist_from_end = math.dist(cell, end_cell)
-            step_size = max( min(int(dist_from_end), max_step_size), 1)
-
-            for du,dv in [(1,1), (-1,-1), (1,-1), (-1,1), (-1,0), (1,0), (0,-1), (0,1)]:
-                n_cell = (curr_u + (du * step_size), curr_v + (dv*step_size))
-                if n_cell not in seen: #if we haven't visited the cell already
-                    if 0 <= n_cell[0] < map_w and 0 <= n_cell[1] < map_h: #if the cell is within bounds
-                        if self.map["array"][n_cell[1]][n_cell[0]] == 0:
-                            neighbors.append(n_cell)
-            
-            return neighbors
         
         if visualize:
             self.clear_points()
@@ -292,20 +268,40 @@ class PathPlan(Node):
                 self.publish_edges(edges)
 
             if curr_cell == end_cell:
-                return np.array(curr_path)
+                found_path = curr_path
+                break
 
-            for neighbor in find_valid_neighbors(curr_cell):
+            curr_dist_from_end = math.dist(curr_cell, end_cell)
+            step_size = max( min(int(curr_dist_from_end), self.max_step_size), 1)
+
+            for neighbor in self.find_valid_neighbors(curr_cell, step_size):
                 new_path = curr_path + (neighbor,)
 
                 new_path_cost = curr_path_cost + math.dist(curr_cell, neighbor)
                 new_clearance_cost = avg_clearance + (self.dist_map[neighbor[1],neighbor[0]] - avg_clearance) / len(new_path)
                 new_total_cost = new_path_cost + math.dist(neighbor ,end_cell) - new_clearance_cost
                 heapq.heappush(queue, (new_total_cost, new_path_cost, new_clearance_cost, new_path))
+        
+        if found_path is None:
+            return False
+        
+        shortened_path = self.shorten_cell_path(found_path)
+        real_path = self.grid_to_real_frame(shortened_path)
+
+        self.trajectory.clear()
+        self.trajectory.addPoints(real_path)
+        return True
 
     
 
     def publish_edges(self, edges):
-        """Publish all accumulated edges as a single connected marker."""
+        """
+        Publish all accumulated edges as a single connected marker.
+
+        Args:
+            edges (nd array of tuples): An array of tuples wherein each tuple has two
+            cells representing an edge.
+        """
         marker = Marker()
         marker.header.frame_id = "map"
         marker.ns = self.viz_namespace
@@ -337,6 +333,9 @@ class PathPlan(Node):
         self.search_pub.publish(marker_arr)
     
     def clear_points(self):
+        """
+        Clears the drawing of the search algorithm
+        """
         marker = Marker()
         marker.header.frame_id = "map"
         marker.ns = "search_alg"
@@ -347,6 +346,14 @@ class PathPlan(Node):
         self.search_pub.publish(marker_arr)
 
     def shorten_cell_path(self, cell_path):
+        """
+        Given a path of cells, removes extraneous cells that do not indicate a change
+        of direction
+
+        Args:
+            cell_path (nd array): An array of tuples representing cells of a valid
+            path from the first cell to the last
+        """
         curr_heading = None
         new_cell_path = []
 
@@ -362,12 +369,26 @@ class PathPlan(Node):
         return new_cell_path
 
     def grid_to_real_frame(self, cells):
+        """
+        Converts a list of cells to their pixel locations in the real map
+
+        Args:
+            cells (nd array): A list of (v, u) tuples representing the cell locations in
+            the occupancy grid
+        """
         cells = np.array([[cx * self.map["res"], cy * self.map["res"],0,1] for cx, cy in cells])
         points = (self.map["transform"] @ cells.T).T
 
         return np.array([[px,py] for px,py,_,_ in points])
     
     def real_to_grid_frame(self, points):
+        """
+        Converts a list of pixels to their cell locations in the occupancy grid
+
+        Args:
+            points (nd array): A list of (x, y) coords representing the pixel locations in the
+            real map
+        """
         points = np.array([[px,py,0,1] for px, py in points])
         cells = ((self.map["transform_inv"] @ points.T).T)
         return np.array([[cx / self.map["res"], cy / self.map["res"]] for cx , cy, _, _ in cells], dtype = int)
