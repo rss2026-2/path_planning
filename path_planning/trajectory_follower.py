@@ -25,11 +25,11 @@ class PurePursuit(Node):
         self.declare_parameter('drive_topic', "/drive")
         # added in the last pure pursuit
         # self.declare_parameter("car_length", 0.325) # replaced with self.wheelbase_length
-        self.declare_parameter("max_steering_angle", 0.34)
+        self.declare_parameter("max_steering_angle", 1.5)
         self.declare_parameter("speed", 0.7)
-        self.declare_parameter("lookahead", 0.8)
+        self.declare_parameter("lookahead", 2.0)
         self.declare_parameter("error_epsilon", 1.0)
-        self.declare_parameter("discretization_length", 1.0)
+        self.declare_parameter("discretization_length", 0.1)
 
         # -- Assigning variables -- 
         self.odom_topic = self.get_parameter('odom_topic').get_parameter_value().string_value
@@ -37,7 +37,7 @@ class PurePursuit(Node):
         # self.CAR_LENGTH = self.get_parameter('car_length').get_parameter_value().double_value # replaced with self.wheelbase_length
         self.MAX_STEERING_ANGLE = self.get_parameter('max_steering_angle').get_parameter_value().double_value
         self.SPEED = self.get_parameter('speed').get_parameter_value().double_value
-        self.LOOKAHEAD = self.get_parameter('lookahead').get_parameter_value().double_value
+        self.BASE_LOOKAHEAD = self.get_parameter('lookahead').get_parameter_value().double_value
         self.EPSILON = self.get_parameter('error_epsilon').get_parameter_value().double_value
         self.DISCRETIZATION_LENGTH = self.get_parameter('discretization_length').get_parameter_value().double_value
 
@@ -60,7 +60,7 @@ class PurePursuit(Node):
         # -- Other constant vars --
         self.STEERING_ANGLE_THRESH = 1.2 # initially working with it at 0.9 but it was reversing a lot
         self.WHEELBASE_LENGTH = 0.325 # FILL IN # Need to check this number
-        self.LOOKAHEAD = 0.8 + 0.2 * self.SPEED
+        self.LOOKAHEAD = self.BASE_LOOKAHEAD
 
         # -- Initialized vars -- 
         # Car odometry
@@ -70,6 +70,7 @@ class PurePursuit(Node):
         self.initialized_traj = False
         self.path = None
         self.trajectory = LineTrajectory(self, "/followed_trajectory")
+        self.last_closest_idx = 0
 
         timer_rate = 25
         self.create_timer(1/timer_rate, self.timer_callback)
@@ -98,7 +99,7 @@ class PurePursuit(Node):
         that can be followed using our implementation of pure pursuit.
         """
         # self.get_logger().info(f"Receiving new trajectory {len(msg.poses)} points")
-
+        self.last_closest_idx = 0
         self.trajectory.clear()
         self.trajectory.fromPoseArray(msg)
         self.trajectory.publish_viz(duration=0.0)
@@ -199,8 +200,11 @@ class PurePursuit(Node):
         # Calculate the squared distance between robot position and each point on the path
         dists = np.sum((path - robot_pos)**2, axis=1)
 
-        # Get the index of the closest point
-        closest_idx = np.argmin(dists)
+        # Only search forward from last known position, never backwards
+        search_dists = dists.copy()
+        search_dists[:self.last_closest_idx] = np.inf
+        closest_idx = np.argmin(search_dists)
+        self.last_closest_idx = closest_idx  # ratchet forward only
 
         # Only consider values further along the path than the closest point
         future_points = path[closest_idx:]
@@ -258,12 +262,20 @@ class PurePursuit(Node):
             drive.speed = 0.0
             drive.steering_angle = 0.0
             return drive
-
-        # calculate with the pure pursuit
-        robot_pos = np.array([self.x, self.y])
+     
         # goal_vector = target_point - robot_pos
         goal_vector = self.world_to_vehicle(target_point)
         new_steering_angle = self.compute_feedback_angle(goal_vector)
+
+        robot_pos = np.array([self.x, self.y])
+        dists = np.sum((self.path - robot_pos)**2, axis=1)
+
+        closest_idx = np.argmin(dists)
+        seg_start = max(0, closest_idx)
+        seg_end = min(len(self.path), closest_idx + 2)
+        signed_cte = self.compute_signed_cte(robot_pos, self.path[seg_start:seg_end])
+        cte_gain = 2.0
+        new_steering_angle -= signed_cte * cte_gain
 
         # If the turn we have to make is too tight or the cone is cut off, or the cone is just plainly too close, reverse first
         turning_angle_too_tight = abs(new_steering_angle) > self.MAX_STEERING_ANGLE * self.STEERING_ANGLE_THRESH
@@ -278,9 +290,48 @@ class PurePursuit(Node):
         else: # if it is in front of us reasonable angle, give it that angle
             new_steering_angle = float(np.clip(new_steering_angle, -self.MAX_STEERING_ANGLE, self.MAX_STEERING_ANGLE))
             drive.steering_angle = new_steering_angle
+            new_speed = self.get_speed_by_proximity(goal_dist, new_steering_angle, traj_vector)
             drive.speed = self.get_speed_by_proximity(goal_dist, new_steering_angle, traj_vector)
+            self.LOOKAHEAD = self.BASE_LOOKAHEAD + 0.2 * new_speed
 
         return drive
+    
+    def compute_signed_cte(self, robot_pos, path):
+        robot_pos = np.array(robot_pos)
+        min_dist = float("inf")
+        closest_seg_idx = 0
+        closest_proj = None
+
+        for i in range(len(path) - 1):
+            p1 = np.array(path[i])
+            p2 = np.array(path[i + 1])
+
+            seg = p2 - p1
+            seg_len2 = np.dot(seg, seg)
+
+            if seg_len2 == 0:
+                proj = p1
+            else:
+                t = np.dot(robot_pos - p1, seg) / seg_len2
+                t = np.clip(t, 0.0, 1.0)
+                proj = p1 + t * seg
+
+            dist = np.linalg.norm(robot_pos - proj)
+            if dist < min_dist:
+                min_dist = dist
+                closest_seg_idx = i
+                closest_proj = proj
+
+
+        # Sign via cross product of segment direction and vector to robot
+        p1 = np.array(path[closest_seg_idx])
+        p2 = np.array(path[closest_seg_idx + 1])
+        seg = p2 - p1
+        to_robot = robot_pos - closest_proj
+
+        # Positive = robot is to the left of path direction
+        sign = np.sign(seg[0] * to_robot[1] - seg[1] * to_robot[0])
+        return min_dist * sign
 
     def compute_feedback_angle(self, goal_vector):
         """
@@ -291,7 +342,7 @@ class PurePursuit(Node):
         # pure pursuit steering law
         delta = np.arctan2(
             2 * self.WHEELBASE_LENGTH * goal_vector[1],
-            lookahead_dist**2
+            lookahead_dist
         )
 
         # delta = np.clip(delta, -self.MAX_STEERING_ANGLE, self.MAX_STEERING_ANGLE)
@@ -316,7 +367,7 @@ class PurePursuit(Node):
         else:
             angle_too_wide = False
 
-        if distance_to_goal <= 1.25 or steering_angle >= self.MAX_STEERING_ANGLE / 2 or angle_too_wide:
+        if distance_to_goal <= 1.25 or steering_angle >= self.MAX_STEERING_ANGLE / 3 or angle_too_wide:
             return 0.5
         else:
             return self.SPEED

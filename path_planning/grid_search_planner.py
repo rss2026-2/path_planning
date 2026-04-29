@@ -296,8 +296,8 @@ class PathPlan(Node):
         if found_path is None:
             return False
         
-        shortened_path = self.shorten_cell_path(found_path)
-        real_path = self.grid_to_real_frame(shortened_path)
+        # shortened_path = self.shorten_cell_path(found_path)
+        real_path = self.grid_to_real_frame(found_path)
 
         self.trajectory.clear()
         self.trajectory.addPoints(real_path)
