@@ -280,18 +280,10 @@ class PathPlan(Node):
             curr_dist_from_end = math.dist(curr_cell, end_cell)
             step_size = max( min(int(curr_dist_from_end), self.max_step_size), 1)
 
+            weights_arr = [1,1,-1,-5]
             for neighbor in self.find_valid_neighbors(curr_cell, step_size):
                 new_path = curr_path + (neighbor,)
-
-                new_path_cost = curr_path_cost + math.dist(curr_cell, neighbor)
-
-                curr_clearance = self.dist_map[neighbor[1],neighbor[0]]
-
-                new_avg_clearance = avg_clearance + (self.dist_map[neighbor[1],neighbor[0]] - avg_clearance) / len(new_path)
-                new_min_clearance = min(min_clearance, curr_clearance)
-                new_total_cost = new_path_cost + math.dist(neighbor ,end_cell) - new_avg_clearance - new_min_clearance
-
-                heapq.heappush(queue, (new_total_cost, new_path_cost, new_avg_clearance, new_min_clearance, new_path))
+                heapq.heappush(queue, self.calculate_new_cost(new_path, end_cell, curr_path_cost, avg_clearance, min_clearance, weights_arr))
         
         if found_path is None:
             return False
@@ -302,6 +294,33 @@ class PathPlan(Node):
         self.trajectory.clear()
         self.trajectory.addPoints(real_path)
         return True
+    
+    def calculate_new_cost(self, new_path, end_cell, curr_path_cost, curr_avg_clearance, curr_min_clearance, weights = [1,1,1,1]):
+        """
+        Updates the A* cost of a new path
+        """
+        curr_cell = new_path[-2]
+        next_cell = new_path[-1]
+        curr_clearance = self.dist_map[next_cell[1],next_cell[0]]
+        
+        # Path cost is the sum of the pairwise distances between cells in the path
+        new_path_cost = curr_path_cost + math.dist(curr_cell, next_cell)
+
+        # Heurestic estimate of future cost to goal (L2 Distance)
+        goal_cost = math.dist(next_cell ,end_cell)
+
+        # The average clearance from obstacles of all the cells in the path from obstacles
+        new_avg_clearance = curr_avg_clearance + (curr_clearance - curr_avg_clearance) / len(new_path)
+
+        # The minimum clearance from obstacles of  all cells in the path
+        new_min_clearance = min(curr_min_clearance, curr_clearance)
+
+        costs_arr = np.array([new_path_cost, goal_cost, new_avg_clearance, new_min_clearance])
+        weights_arr = np.array(weights)
+
+        total_cost = np.dot(costs_arr, weights_arr)
+
+        return (total_cost, new_path_cost, new_avg_clearance, new_min_clearance, new_path)
     
     def publish_edges(self, edges):
         """
